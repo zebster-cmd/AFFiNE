@@ -11,13 +11,13 @@ Inspected `llm_adapter 0.2.7` source
 - `pub struct ModelRegistryVariant` derives `Deserialize, Serialize`
   (`#[serde(rename_all = "camelCase")]`) and **all fields are `pub`**:
   `backend_kind, canonical_key, raw_model_id, display_name?, aliases,
-  legacy_aliases?, capabilities, protocol?, request_layer?, route_overrides?,
-  behavior_flags?`. → constructible via `serde_json::from_value(json!({…}))`
+legacy_aliases?, capabilities, protocol?, request_layer?, route_overrides?,
+behavior_flags?`. → constructible via `serde_json::from_value(json!({…}))`
   using the camelCase keys already shown in the plan.
 - `pub fn default_model_registry_variants() -> Vec<ModelRegistryVariant>` —
   returns an **owned Vec**; safe to `.to_vec()` / `.extend()`.
 - `pub fn resolve_model_registry_variant<'a>(variants: &'a [ModelRegistryVariant],
-  backend_kind: Option<&str>, model_id: &str) -> Result<Option<(&'a ModelRegistryVariant, &'static str)>, String>`
+backend_kind: Option<&str>, model_id: &str) -> Result<Option<(&'a ModelRegistryVariant, &'static str)>, String>`
   and `select_model_registry_variant<'a>(…)` — both `pub`, take a slice.
 
 **Conclusion:** append curated variants inside
@@ -27,19 +27,58 @@ the existing resolve/select calls. **No fork of `llm_adapter` and no
 `[patch.crates-io]` override required.** Plan Tasks 2/5/6/7 code is valid
 as written against `llm_adapter 0.2.7`.
 
-## 2. Per-modality Requesty endpoint validation → **PENDING (needs a Requesty API key).**
+## 2. Per-modality Requesty endpoint validation → **DONE via public catalog. Major scope impact.**
 
-Not yet run — requires a live `REQUESTY_KEY`. When available, run Task 0 Step 4
-probes against `https://router.requesty.ai/v1` and record served/not-served for:
+`GET https://router.requesty.ai/v1/models` is **public** (returns 200 with no /
+bogus token — so a 200 there proves nothing about a key). It lists **562
+models, every one `api: "chat"`**. Requesty's router is **chat-completions-only**.
 
-- [ ] chat — `POST /chat/completions` (`sference/glm-5.2`)
-- [ ] embedding — `POST /embeddings` (`nebius/Qwen/Qwen3-Embedding-8B`)
-- [ ] rerank — chat probe with `nebius/qwen/qwen3-32b` (LLM-based; no `/rerank`)
-- [ ] image — `POST /images/generations` (`vertex/google/gemini-3.1-flash-image-preview`)
-- [ ] transcript — `POST /audio/transcriptions` (`mistral/voxtral-mini-latest`)
+Catalog check of the configured models:
 
-Text (Task 2) and embedding (Task 2) are low-risk regardless. Image/rerank/
-transcript variant tasks (6/5/7) are gated on their probe result.
+| Scenario / configured model                     | Catalog status                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| chat — `sference/glm-5.2`                       | ✅ exists (chat) — also `zai/glm-5.2`, `tensorx/glm-5.2`                                                                  |
+| rerank — `nebius/qwen/qwen3-32b`                | ✅ exists (chat) — LLM-based rerank viable                                                                                |
+| image — `google/gemini-3.1-flash-image-preview` | ⚠️ exists but **chat api** — image via `/chat/completions`, NOT the `/images/generations` path Affine's image route emits |
+| embedding — `nebius/Qwen/Qwen3-Embedding-8B`    | ❌ not in catalog — no embedding-api models at all                                                                        |
+| transcript — `mistral/voxtral-mini-latest`      | ❌ not in catalog — no audio/transcription models                                                                         |
+
+### 2a. CORRECTION — `/models` lists chat models only; Requesty serves all modalities.
+
+Requesty's API docs (`docs.requesty.ai/api-reference/inference-apis`) confirm
+**OpenAI-compatible endpoints for every modality** under
+`https://router.requesty.ai/v1`:
+
+- `POST /chat/completions` — chat (also image/rerank via chat)
+- `POST /embeddings` — embeddings
+- `POST /audio/transcriptions` — speech-to-text
+- `POST /audio/speech` — TTS
+- `POST /images/generations` — image generation
+- `GET /models` — **enumerates chat models only**; the `?api=` filter is
+  ignored (returns the same 562 chat entries regardless). Embedding/audio/image
+  models are not listed but their endpoints work.
+
+**Consequences for the plan (single-gateway, all five retained):**
+
+- **No multi-gateway needed.** One Requesty provider covers all five modalities.
+- **chat / rerank** → `/chat/completions` (`sference/glm-5.2`,
+  `nebius/qwen/qwen3-32b`). Confirmed present in catalog.
+- **embedding** → `/embeddings` (`nebius/Qwen/Qwen3-Embedding-8B`). Not in the
+  chat listing; routes through Affine's embedding driver. Needs live validation.
+- **image** → `/images/generations` (`google/gemini-3.1-flash-image-preview`,
+  present in catalog). Routes through Affine's image driver (`openai_images`).
+- **transcript** → `/audio/transcriptions` (`mistral/voxtral-mini-latest`).
+  Routes through Affine's transcript subsystem (Task 7 wiring). Needs live
+  validation.
+- Remaining unknown per modality is **live behavior**, blocked only by the
+  invalid key (below) — not by model availability.
+
+## 2b. Key validity → **the provided key is INVALID.**
+
+`POST /chat/completions` with the supplied key returns `403 {"error":{"origin":
+"router","message":"Invalid authorization token"}}`. A valid key is required for
+any live inference / smoke test. (Key handled via env var only; never written or
+committed.)
 
 ## 3. Environment note
 
