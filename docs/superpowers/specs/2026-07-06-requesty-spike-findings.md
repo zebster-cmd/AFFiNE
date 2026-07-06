@@ -73,12 +73,27 @@ Requesty's API docs (`docs.requesty.ai/api-reference/inference-apis`) confirm
 - Remaining unknown per modality is **live behavior**, blocked only by the
   invalid key (below) — not by model availability.
 
-## 2b. Key validity → **the provided key is INVALID.**
+## 2b. Live validation (valid key) → **4 of 5 modalities confirmed.**
 
-`POST /chat/completions` with the supplied key returns `403 {"error":{"origin":
-"router","message":"Invalid authorization token"}}`. A valid key is required for
-any live inference / smoke test. (Key handled via env var only; never written or
-committed.)
+(A first key was invalid — 403 invalid token. A second, working key validated
+the endpoints below. Keys handled via env var only; never written or committed.
+Recommend rotating any key pasted into chat.)
+
+| Modality         | Endpoint                | Model                                   | Result                               |
+| ---------------- | ----------------------- | --------------------------------------- | ------------------------------------ |
+| chat             | `/chat/completions`     | `sference/glm-5.2`                      | ✅ 200 (routed to `zai-org/GLM-5.2`) |
+| rerank           | `/chat/completions`     | `nebius/qwen/qwen3-32b`                 | ✅ 200 (LLM-based rerank viable)     |
+| embedding        | `/embeddings`           | `nebius/Qwen/Qwen3-Embedding-8B`        | ✅ 200, 4096 dims                    |
+| transcript       | `/audio/transcriptions` | `mistral/voxtral-mini-latest`           | ✅ 200 (endpoint functional)         |
+| image            | `/images/generations`   | `google/gemini-3.1-flash-image-preview` | ❌ 404 "model not supported"         |
+| image (via chat) | `/chat/completions`     | same                                    | ❌ 403 "Provider blocked by policy"  |
+| image (control)  | `/images/generations`   | `openai/gpt-image-1`, `openai/dall-e-3` | ❌ 404 "not supported"               |
+
+**Image conclusion:** not serviceable on this Requesty account as configured —
+image providers appear policy-gated (dashboard toggle) and the OpenAI images
+endpoint isn't matched. **v1 = chat, rerank, embedding, transcript (4/5).**
+Image deferred pending Requesty dashboard enablement + a decision on chat-image
+vs `/images/generations` wiring.
 
 ## 3. Environment note
 

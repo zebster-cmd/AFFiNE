@@ -24,3 +24,10 @@ BLOCKERS:
 - Model IDs: chat sference/glm-5.2 (catalog-confirmed), rerank nebius/qwen/qwen3-32b (confirmed), image google/gemini-3.1-flash-image-preview (confirmed), embedding nebius/Qwen/Qwen3-Embedding-8B (endpoint exists, live-unverified), transcript mistral/voxtral-mini-latest (endpoint exists, live-unverified).
 - BLOCKER: provided Requesty key returns 403 invalid -> no live inference/smoke.
 - BLOCKER: test harness needs Node 22.23 + affine CLI wrapper; running ava on Node 24 here fails (prelude path). deps installed, native built.
+
+## Update (LIVE validation with working key)
+
+- Working key confirmed. Validated live: chat ✅, rerank(chat) ✅, embedding ✅ (4096d), transcript ✅ (endpoint 200).
+- image ❌ blocked: gemini image via chat = 403 "Provider blocked by policy"; /images/generations 404 for gemini + openai image models. => image deferred pending Requesty dashboard enablement.
+- v1 scope now: chat, rerank, embedding, transcript (Tasks 1-5,7). Image (Task 6) deferred.
+- Still open: test EXECUTION needs Node 22.23 harness (this session Node 24 fails ava prelude resolution). Code can be written; local test run unresolved.
