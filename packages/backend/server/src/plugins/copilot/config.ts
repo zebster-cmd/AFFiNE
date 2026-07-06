@@ -27,6 +27,7 @@ export type CopilotProviderConfigMap = {
   [CopilotProviderType.GeminiVertex]: GeminiVertexConfig;
   [CopilotProviderType.Anthropic]: AnthropicOfficialConfig;
   [CopilotProviderType.AnthropicVertex]: AnthropicVertexConfig;
+  [CopilotProviderType.Requesty]: OpenAIConfig;
 };
 
 export type ProviderSpecificConfig =
@@ -139,6 +140,8 @@ const AnthropicOfficialConfigShape = z.object({
   baseURL: z.string().optional(),
 });
 
+const RequestyConfigShape = OpenAIConfigShape;
+
 const CopilotProviderProfileShape = z.discriminatedUnion('type', [
   CopilotProviderProfileBaseShape.extend({
     type: z.literal(CopilotProviderType.OpenAI),
@@ -167,6 +170,10 @@ const CopilotProviderProfileShape = z.discriminatedUnion('type', [
   CopilotProviderProfileBaseShape.extend({
     type: z.literal(CopilotProviderType.AnthropicVertex),
     config: VertexProviderConfigShape,
+  }),
+  CopilotProviderProfileBaseShape.extend({
+    type: z.literal(CopilotProviderType.Requesty),
+    config: RequestyConfigShape,
   }),
 ]);
 
@@ -208,6 +215,7 @@ declare global {
         geminiVertex: ConfigItem<GeminiVertexConfig>;
         anthropic: ConfigItem<AnthropicOfficialConfig>;
         anthropicVertex: ConfigItem<AnthropicVertexConfig>;
+        requesty: ConfigItem<OpenAIConfig>;
       };
     };
   }
@@ -287,6 +295,13 @@ defineModuleConfig('copilot', {
     desc: 'The config for the anthropic provider in Google Vertex AI.',
     default: {},
     schema: VertexSchema,
+  },
+  'providers.requesty': {
+    desc: 'The config for the Requesty gateway provider (OpenAI-compatible).',
+    default: {
+      apiKey: '',
+      baseURL: 'https://router.requesty.ai/v1',
+    },
   },
   unsplash: {
     desc: 'The config for the unsplash key.',

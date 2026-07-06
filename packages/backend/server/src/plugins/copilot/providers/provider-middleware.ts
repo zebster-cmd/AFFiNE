@@ -28,6 +28,9 @@ const DEFAULT_MIDDLEWARE_BY_TYPE: Record<
     node: { text: DEFAULT_NODE_TEXT_MIDDLEWARE },
   },
   [CopilotProviderType.FAL]: {},
+  [CopilotProviderType.Requesty]: {
+    node: { text: DEFAULT_NODE_TEXT_MIDDLEWARE },
+  },
 };
 
 function unique<T>(items: T[]) {

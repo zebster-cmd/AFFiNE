@@ -30,6 +30,7 @@ export enum CopilotProviderType {
   Gemini = 'gemini',
   GeminiVertex = 'geminiVertex',
   OpenAI = 'openai',
+  Requesty = 'requesty',
 }
 
 export const CopilotProviderSchema = z.object({

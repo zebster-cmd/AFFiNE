@@ -11,4 +11,5 @@ export { OpenAIProvider } from './openai';
 export type { CopilotProvider } from './provider';
 export { CopilotProviders } from './provider-tokens';
 export { CopilotProviderRegistryService } from './registry-service';
+export { RequestyProvider } from './requesty';
 export * from './types';

@@ -17,6 +17,7 @@ const LEGACY_PROVIDER_ORDER: CopilotProviderType[] = [
   CopilotProviderType.GeminiVertex,
   CopilotProviderType.Anthropic,
   CopilotProviderType.AnthropicVertex,
+  CopilotProviderType.Requesty,
 ];
 
 const LEGACY_PROVIDER_PRIORITY = LEGACY_PROVIDER_ORDER.reduce(
