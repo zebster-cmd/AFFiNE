@@ -57,3 +57,15 @@ test('does nothing when the scenario has no configured model', t => {
   const out = resolver(ENABLED).resolve({}, 'image');
   t.is(out.modelId, undefined);
 });
+
+test('warnUnknownModels flags scenario models missing from the registry', t => {
+  const r = resolver({
+    enabled: true,
+    models: {
+      chat: 'requesty/sference/glm-5.2',
+      image: 'requesty/unknown/model',
+    },
+  });
+  const missing = r.warnUnknownModels(new Set(['requesty/sference/glm-5.2']));
+  t.deepEqual(missing, ['requesty/unknown/model']);
+});

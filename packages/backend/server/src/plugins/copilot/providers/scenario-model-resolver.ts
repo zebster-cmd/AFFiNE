@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { Config } from '../../../base';
 import type { ModelFullConditions } from './types';
@@ -17,6 +17,7 @@ const FEATURE_KIND_TO_SCENARIO: Record<string, Scenario> = {
 @Injectable()
 export class ScenarioModelResolver {
   @Inject() private readonly AFFiNEConfig!: Config;
+  private readonly logger = new Logger(ScenarioModelResolver.name);
 
   // Test constructor injection convenience.
   constructor(config?: Config) {
@@ -43,5 +44,21 @@ export class ScenarioModelResolver {
     }
     const modelId = this.modelForFeatureKind(featureKind);
     return modelId ? { ...cond, modelId } : cond;
+  }
+
+  warnUnknownModels(known: Set<string>): string[] {
+    const overrides = this.AFFiNEConfig.copilot.scenarioOverrides;
+    if (!overrides?.enabled) {
+      return [];
+    }
+    const missing = Object.values(overrides.models).filter(
+      (m): m is string => !!m && !known.has(m)
+    );
+    for (const m of missing) {
+      this.logger.warn(
+        `scenarioOverrides model "${m}" is not in the copilot model registry; requests for it will fail.`
+      );
+    }
+    return missing;
   }
 }
