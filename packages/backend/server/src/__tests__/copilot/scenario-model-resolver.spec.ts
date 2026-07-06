@@ -37,12 +37,12 @@ test('maps embedding/rerank one-to-one', t => {
   );
 });
 
-test('an explicit model wins over the override', t => {
+test('overrides the pre-set model when enabled', t => {
   const out = resolver(ENABLED).resolve(
     { modelId: 'requesty/openai/gpt-4o' },
     'chat'
   );
-  t.is(out.modelId, 'requesty/openai/gpt-4o');
+  t.is(out.modelId, 'requesty/sference/glm-5.2');
 });
 
 test('does nothing when disabled', t => {
@@ -56,6 +56,14 @@ test('does nothing when disabled', t => {
 test('does nothing when the scenario has no configured model', t => {
   const out = resolver(ENABLED).resolve({}, 'image');
   t.is(out.modelId, undefined);
+});
+
+test('does nothing when featureKind has no mapped scenario', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'requesty/openai/gpt-4o' },
+    'workspace_indexing'
+  );
+  t.is(out.modelId, 'requesty/openai/gpt-4o');
 });
 
 test('warnUnknownModels flags scenario models missing from the registry', t => {

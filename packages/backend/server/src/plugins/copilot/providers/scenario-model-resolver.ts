@@ -39,9 +39,6 @@ export class ScenarioModelResolver {
     cond: ModelFullConditions,
     featureKind?: string
   ): ModelFullConditions {
-    if (cond.modelId) {
-      return cond;
-    }
     const modelId = this.modelForFeatureKind(featureKind);
     return modelId ? { ...cond, modelId } : cond;
   }
