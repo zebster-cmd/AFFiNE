@@ -985,10 +985,14 @@ test('CopilotProviderFactory should return no prepared routes when native prepar
       quotaBackedRoutesAvailable: true,
     }),
   };
+  const scenarioResolver = {
+    resolve: (cond: ModelFullConditions) => cond,
+  };
   const factory = new CopilotProviderFactory(
     server as never,
     registryService as never,
-    access as never
+    access as never,
+    scenarioResolver as never
   );
   factory.register('openai-main', provider);
 
@@ -1484,10 +1488,14 @@ test('CopilotProviderFactory should resolve legacy model ids through native regi
       quotaBackedRoutesAvailable: true,
     }),
   };
+  const scenarioResolver = {
+    resolve: (cond: ModelFullConditions) => cond,
+  };
   const factory = new CopilotProviderFactory(
     server as never,
     registryService as never,
-    access as never
+    access as never,
+    scenarioResolver as never
   );
   factory.register('openai-main', provider);
 
@@ -1545,10 +1553,14 @@ function createProviderFactoryWithByokRoutes({
       quotaBackedRoutesAvailable: context.quotaBackedRoutesAllowed ?? hasQuota,
     })),
   };
+  const scenarioResolver = {
+    resolve: (cond: ModelFullConditions) => cond,
+  };
   const factory = new CopilotProviderFactory(
     server as never,
     registryService as never,
-    access as never
+    access as never,
+    scenarioResolver as never
   );
   factory.register('openai-main', provider);
 
