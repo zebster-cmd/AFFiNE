@@ -205,6 +205,15 @@ declare global {
         key: string;
       }>;
       storage: ConfigItem<StorageProviderConfig>;
+      scenarioOverrides: ConfigItem<{
+        enabled: boolean;
+        models: Partial<
+          Record<
+            'chat' | 'image' | 'embedding' | 'rerank' | 'transcript',
+            string
+          >
+        >;
+      }>;
       providers: {
         profiles: ConfigItem<CopilotProviderProfile[]>;
         defaults: ConfigItem<CopilotProviderDefaults>;
@@ -325,5 +334,21 @@ defineModuleConfig('copilot', {
       },
     },
     schema: StorageJSONSchema,
+  },
+  scenarioOverrides: {
+    desc: 'Override which model backs each AI scenario (routed via a provider such as Requesty).',
+    default: { enabled: false, models: {} },
+    shape: z.object({
+      enabled: z.boolean(),
+      models: z
+        .object({
+          chat: z.string().optional(),
+          image: z.string().optional(),
+          embedding: z.string().optional(),
+          rerank: z.string().optional(),
+          transcript: z.string().optional(),
+        })
+        .partial(),
+    }),
   },
 });

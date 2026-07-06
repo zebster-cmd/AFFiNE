@@ -30,6 +30,7 @@ import {
   CopilotProviderLifecycleService,
   CopilotProviderRegistryService,
   CopilotProviders,
+  ScenarioModelResolver,
 } from './providers';
 import { CopilotResolver, UserCopilotResolver } from './resolver';
 import { ActionRuntimeBridge } from './runtime/action-runtime-bridge';
@@ -70,6 +71,7 @@ export const COPILOT_PROVIDER_PROVIDERS = [
   CopilotProviderRegistryService,
   CopilotProviderFactory,
   CopilotProviderLifecycleService,
+  ScenarioModelResolver,
 ];
 
 export const COPILOT_RUNTIME_PROVIDERS = [

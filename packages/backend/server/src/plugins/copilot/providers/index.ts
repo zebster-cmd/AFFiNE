@@ -12,4 +12,5 @@ export type { CopilotProvider } from './provider';
 export { CopilotProviders } from './provider-tokens';
 export { CopilotProviderRegistryService } from './registry-service';
 export { RequestyProvider } from './requesty';
+export { ScenarioModelResolver } from './scenario-model-resolver';
 export * from './types';

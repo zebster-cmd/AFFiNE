@@ -22,6 +22,7 @@ import type {
   PreparedNativeStructuredExecution,
 } from './provider-runtime-contract';
 import { CopilotProviderRegistryService } from './registry-service';
+import { ScenarioModelResolver } from './scenario-model-resolver';
 import {
   type CopilotChatOptions,
   type CopilotEmbeddingOptions,
@@ -72,7 +73,8 @@ export class CopilotProviderFactory {
   constructor(
     private readonly server: ServerService,
     private readonly registries: CopilotProviderRegistryService,
-    private readonly access: CopilotAccessPolicy
+    private readonly access: CopilotAccessPolicy,
+    private readonly scenarioResolver: ScenarioModelResolver
   ) {}
 
   private readonly logger = new Logger(CopilotProviderFactory.name);
@@ -204,6 +206,7 @@ export class CopilotProviderFactory {
     this.logger.debug(
       `Resolving copilot provider for output type: ${cond.outputType}`
     );
+    cond = this.scenarioResolver.resolve(cond, context.featureKind);
     const { byokRegistry, quotaBackedRegistry, quotaBackedRoutesAvailable } =
       await this.getEffectiveRegistry(context);
     const byokRoutes = await this.resolveRoutesFromRegistry(
