@@ -11,11 +11,48 @@ fn to_contract_variant(variant: &llm_adapter::core::ModelRegistryVariant) -> Res
     .map_err(crate::llm::map_json_error)
 }
 
+fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> {
+  let defs = serde_json::json!([
+    {
+      "backendKind": "openai_chat",
+      "canonicalKey": "sference/glm-5.2",
+      "rawModelId": "sference/glm-5.2",
+      "displayName": "Requesty GLM 5.2",
+      "aliases": ["sference/glm-5.2"],
+      "capabilities": [
+        { "input": ["text"], "output": ["text", "object", "structured"] }
+      ]
+    },
+    {
+      "backendKind": "openai_chat",
+      "canonicalKey": "nebius/Qwen/Qwen3-Embedding-8B",
+      "rawModelId": "nebius/Qwen/Qwen3-Embedding-8B",
+      "displayName": "Requesty Qwen3 Embedding 8B",
+      "aliases": ["nebius/Qwen/Qwen3-Embedding-8B"],
+      "capabilities": [
+        { "input": ["text"], "output": ["embedding"] }
+      ]
+    }
+  ]);
+  serde_json::from_value(defs).expect("valid requesty variant definitions")
+}
+
+#[cfg(test)]
+pub(crate) fn requesty_registry_variants_for_test() -> Vec<llm_adapter::core::ModelRegistryVariant> {
+  requesty_registry_variants()
+}
+
+fn all_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> {
+  let mut variants = llm_adapter::core::default_model_registry_variants().to_vec();
+  variants.extend(requesty_registry_variants());
+  variants
+}
+
 #[napi(catch_unwind)]
 pub fn llm_resolve_model_registry_variant(
   request: ModelRegistryResolveRequest,
 ) -> Result<ModelRegistryResolveResponse> {
-  let variants = llm_adapter::core::default_model_registry_variants();
+  let variants = all_registry_variants();
   let response = match llm_adapter::core::resolve_model_registry_variant(
     &variants,
     request.backend_kind.as_deref(),
@@ -38,7 +75,7 @@ pub fn llm_resolve_model_registry_variant(
 
 #[napi(catch_unwind)]
 pub fn llm_match_model_registry(request: ModelRegistryMatchRequest) -> Result<ModelRegistryMatchResponse> {
-  let variants = llm_adapter::core::default_model_registry_variants();
+  let variants = all_registry_variants();
   let cond = serde_json::to_value(request.cond)
     .and_then(serde_json::from_value)
     .map_err(crate::llm::map_json_error)?;
@@ -213,5 +250,31 @@ mod tests {
     })
     .unwrap();
     assert!(generic_gemini_image.variant.is_none());
+  }
+
+  #[test]
+  fn should_resolve_requesty_text_variant() {
+    let variants = super::requesty_registry_variants_for_test();
+    let hit =
+      llm_adapter::core::resolve_model_registry_variant(&variants, Some("openai_chat"), "sference/glm-5.2").unwrap();
+    assert!(hit.is_some());
+  }
+
+  #[test]
+  fn should_resolve_requesty_embedding_variant() {
+    let variants = super::requesty_registry_variants_for_test();
+    let hit = llm_adapter::core::resolve_model_registry_variant(
+      &variants,
+      Some("openai_chat"),
+      "nebius/Qwen/Qwen3-Embedding-8B",
+    )
+    .unwrap();
+    let (variant, _) = hit.expect("embedding variant resolves");
+    assert!(
+      variant
+        .capabilities
+        .iter()
+        .any(|c| c.output.iter().any(|o| o == "embedding"))
+    );
   }
 }
