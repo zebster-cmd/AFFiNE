@@ -275,16 +275,28 @@ Behavior:
 - **Image** — deferred: blocked at the Requesty account/policy level, and routes
   through AFFiNE's `/images/generations` path rather than this chat gateway. Needs
   Requesty dashboard enablement + a chat-image-vs-images-endpoint wiring decision.
-- **KNOWN FOLLOW-UP B — transcript Gemini preference (code):** the transcript
-  execution path (`transcript/service.ts` → `transcriptTask` →
-  `prepareStructuredRoutes(..., { prefer: CopilotProviderType.Gemini })`) applies a
-  hardcoded provider preference. `resolveModel`'s preferred-provider filter then
-  excludes every non-Gemini provider, so a `transcript` override pointing at a
-  `requesty/…` model yields **no route** ("No native structured provider route
-  prepared") — the transcript override is wired for _selection_ but cannot reach
-  Requesty at execution. Fix: drop/condition that `prefer` when a transcript
-  scenario override is active. (Chat/embedding/rerank are unaffected — they don't
-  set `prefer`.)
+- **FINDING B — transcript Gemini preference (code): PARTIALLY ADDRESSED.** The
+  transcript path (`transcript/service.ts` → `transcriptTask`) hardcoded
+  `prepareStructuredRoutes(..., { prefer: CopilotProviderType.Gemini })`, whose
+  preferred-provider filter excluded every non-Gemini provider — so a `transcript`
+  override could never route. **Fixed:** `prefer` is now `undefined` when a
+  transcript scenario override is active (default transcription path unchanged).
+- **FINDING B2 — transcript model shape mismatch (deeper, NOT fixed):** AFFiNE
+  transcription is **not** dedicated STT. `transcriptTask` uses the
+  `'Transcript audio structured'` prompt, sends audio as **attachments** to a
+  multimodal model, and calls `prepareStructuredRoutes` with a `responseContract`
+  (structured JSON) — it needs an **audio-input + structured-output multimodal**
+  model (Gemini-class). The Task 7 curated variant `mistral/voxtral-mini-latest`
+  is dedicated STT (audio → plain `{text}`, `output: ["text"]`), so the structured
+  route rejects it even with `prefer` relaxed. To transcribe via Requesty: point
+  the `transcript` override at a Requesty **Gemini-class multimodal chat model**
+  (audio-capable, structured output), add a curated variant with
+  `input: ["text","audio"]` + `output: ["structured","text"]` + audio attachment
+  capability, and **live-verify Requesty passes audio attachments through
+  `/chat/completions`** for that model (the spike only validated the STT
+  `/audio/transcriptions` path, which this pipeline does not use). Using `voxtral`
+  via `/audio/transcriptions` would instead require a new dedicated-STT execution
+  path — a larger change.
 - **KNOWN FOLLOW-UP — `warnUnknownModels` wiring:** helper exists, not wired to a
   startup hook; no registry-enumeration API makes a clean known-set awkward.
   Mis-set models fail loudly at request time, so low impact.

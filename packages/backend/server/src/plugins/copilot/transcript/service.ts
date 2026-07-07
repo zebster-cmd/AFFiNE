@@ -333,6 +333,13 @@ export class CopilotTranscriptionService {
         payload,
         modelId
       );
+      // When a `transcript` scenario override is configured, the model id is an
+      // explicit provider-prefixed id (e.g. `requesty/…`). Forcing
+      // `prefer: Gemini` would make the preferred-provider filter drop every
+      // non-Gemini candidate, so the override could never route. Relax the
+      // preference in that case and let the model prefix pick the provider.
+      const transcriptOverrideActive =
+        !!this.scenarioResolver.modelForFeatureKind('transcript');
       for await (const event of this.actionBridge.runStream({
         userId: task.userId,
         workspaceId: task.workspaceId,
@@ -367,7 +374,9 @@ export class CopilotTranscriptionService {
             billingUnitId: taskId,
             featureKind: 'transcript',
           },
-          prefer: CopilotProviderType.Gemini,
+          prefer: transcriptOverrideActive
+            ? undefined
+            : CopilotProviderType.Gemini,
           responseContract: TranscriptActionResultContract,
         },
       })) {
