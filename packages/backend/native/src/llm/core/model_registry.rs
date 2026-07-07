@@ -32,6 +32,16 @@ fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> 
       "capabilities": [
         { "input": ["text"], "output": ["embedding"] }
       ]
+    },
+    {
+      "backendKind": "openai_chat",
+      "canonicalKey": "nebius/qwen/qwen3-32b",
+      "rawModelId": "nebius/qwen/qwen3-32b",
+      "displayName": "Requesty Qwen3 32B (reranker)",
+      "aliases": ["nebius/qwen/qwen3-32b"],
+      "capabilities": [
+        { "input": ["text"], "output": ["text", "rerank"] }
+      ]
     }
   ]);
   serde_json::from_value(defs).expect("valid requesty variant definitions")
@@ -275,6 +285,21 @@ mod tests {
         .capabilities
         .iter()
         .any(|c| c.output.iter().any(|o| o == "embedding"))
+    );
+  }
+
+  #[test]
+  fn should_resolve_requesty_rerank_variant() {
+    let variants = super::requesty_registry_variants_for_test();
+    let hit =
+      llm_adapter::core::resolve_model_registry_variant(&variants, Some("openai_chat"), "nebius/qwen/qwen3-32b")
+        .unwrap();
+    let (variant, _) = hit.expect("rerank variant resolves");
+    assert!(
+      variant
+        .capabilities
+        .iter()
+        .any(|c| c.output.iter().any(|o| o == "rerank"))
     );
   }
 }
