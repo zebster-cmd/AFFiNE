@@ -16,6 +16,7 @@ import {
 import { Models } from '../../../models';
 import { CopilotAccessPolicy } from '../access';
 import { PromptService } from '../prompt';
+import { ScenarioModelResolver } from '../providers/scenario-model-resolver';
 import { CopilotProviderType } from '../providers/types';
 import { ActionRuntimeBridge } from '../runtime/action-runtime-bridge';
 import { TaskPolicy } from '../runtime/task-policy';
@@ -46,7 +47,8 @@ export class CopilotTranscriptionService {
     private readonly prompts: PromptService,
     private readonly actionBridge: ActionRuntimeBridge,
     private readonly access: CopilotAccessPolicy,
-    private readonly realtime: RealtimePublisher
+    private readonly realtime: RealtimePublisher,
+    private readonly scenarioResolver: ScenarioModelResolver
   ) {}
 
   private parseTaskPayload(payload: unknown): TranscriptionPayloadV2 {
@@ -70,7 +72,10 @@ export class CopilotTranscriptionService {
         `Transcript strategy ${strategy} is not available`
       );
     }
-    const model = await this.tasks.resolveTranscriptionModel(userId);
+    const overrideModel =
+      this.scenarioResolver.modelForFeatureKind('transcript');
+    const model =
+      overrideModel ?? (await this.tasks.resolveTranscriptionModel(userId));
     if (!model) {
       throw new BadRequestException(
         'Transcript strategy gemini is not available'

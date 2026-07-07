@@ -42,6 +42,16 @@ fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> 
       "capabilities": [
         { "input": ["text"], "output": ["text", "rerank"] }
       ]
+    },
+    {
+      "backendKind": "openai_chat",
+      "canonicalKey": "mistral/voxtral-mini-latest",
+      "rawModelId": "mistral/voxtral-mini-latest",
+      "displayName": "Requesty Voxtral Mini (transcription)",
+      "aliases": ["mistral/voxtral-mini-latest"],
+      "capabilities": [
+        { "input": ["audio"], "output": ["text"] }
+      ]
     }
   ]);
   serde_json::from_value(defs).expect("valid requesty variant definitions")
@@ -300,6 +310,21 @@ mod tests {
         .capabilities
         .iter()
         .any(|c| c.output.iter().any(|o| o == "rerank"))
+    );
+  }
+
+  #[test]
+  fn should_resolve_requesty_transcript_variant() {
+    let variants = super::requesty_registry_variants_for_test();
+    let hit =
+      llm_adapter::core::resolve_model_registry_variant(&variants, Some("openai_chat"), "mistral/voxtral-mini-latest")
+        .unwrap();
+    let (variant, _) = hit.expect("transcript variant resolves");
+    assert!(
+      variant
+        .capabilities
+        .iter()
+        .any(|c| c.input.iter().any(|i| i == "audio"))
     );
   }
 }

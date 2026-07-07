@@ -148,7 +148,8 @@ function createCopilotTranscriptionService(...deps: unknown[]) {
     (deps[6] ?? {
       assertQuotaOrByok: Sinon.stub().resolves(undefined),
     }) as never,
-    (deps[7] ?? { publish: Sinon.stub() }) as never
+    (deps[7] ?? { publish: Sinon.stub() }) as never,
+    (deps[8] ?? { modelForFeatureKind: () => undefined }) as never
   );
 }
 
