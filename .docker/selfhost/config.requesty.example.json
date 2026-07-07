@@ -1,0 +1,24 @@
+{
+  "$schema": "https://github.com/toeverything/affine/releases/latest/download/config.schema.json",
+  "copilot": {
+    "enabled": true,
+    "providers.profiles": [
+      {
+        "id": "requesty",
+        "type": "requesty",
+        "config": {
+          "apiKey": "PUT_YOUR_REQUESTY_KEY_HERE",
+          "baseURL": "https://router.requesty.ai/v1"
+        }
+      }
+    ],
+    "scenarioOverrides": {
+      "enabled": true,
+      "models": {
+        "chat": "requesty/sference/glm-5.2",
+        "rerank": "requesty/nebius/qwen/qwen3-32b",
+        "embedding": "requesty/nebius/Qwen/Qwen3-Embedding-8B"
+      }
+    }
+  }
+}

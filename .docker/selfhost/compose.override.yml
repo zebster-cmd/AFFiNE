@@ -1,0 +1,20 @@
+# compose.override.yml
+#
+# Repoints the AFFiNE services at a CUSTOM image built from the
+# `requesty-provider-spec` fork branch (which adds the Requesty copilot provider,
+# curated native model variants, and copilot.scenarioOverrides). Docker Compose
+# auto-merges this file with compose.yml when you run `docker compose up` from
+# this directory — the upstream compose.yml is left untouched.
+#
+# Set AFFINE_IMAGE in your .env to the tag you built/pushed, e.g.:
+#   AFFINE_IMAGE=ghcr.io/zebster-cmd/affine:requesty
+# (see REQUESTY.md for how to build it — note the linux-native caveat).
+#
+# The stock compose.yml pulls ghcr.io/toeverything/affine, which contains NONE of
+# the fork's code; without this override your scenarioOverrides config is ignored.
+
+services:
+  affine:
+    image: ${AFFINE_IMAGE:-affine-requesty:local}
+  affine_migration:
+    image: ${AFFINE_IMAGE:-affine-requesty:local}
