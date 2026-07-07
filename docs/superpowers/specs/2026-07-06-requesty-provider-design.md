@@ -17,23 +17,50 @@ Concretely, an operator configures:
 {
   "copilot": {
     "enabled": true,
-    "providers.requesty": {
-      "apiKey": "<REQUESTY_KEY>",
-      "baseURL": "https://router.requesty.ai/v1"
-    },
+    // Configure Requesty as an EXPLICIT profile whose id is exactly "requesty",
+    // so the "requesty/…" model prefixes below resolve (see note).
+    "providers.profiles": [
+      {
+        "id": "requesty",
+        "type": "requesty",
+        "config": {
+          "apiKey": "<REQUESTY_KEY>",
+          "baseURL": "https://router.requesty.ai/v1",
+        },
+      },
+    ],
     "scenarioOverrides": {
       "enabled": true,
       "models": {
-        "chat":       "requesty/sference/glm-5.2",
-        "image":      "requesty/vertex/google/gemini-3.1-flash-image-preview",
-        "rerank":     "requesty/nebius/qwen/qwen3-32b",
-        "embedding":  "requesty/nebius/Qwen/Qwen3-Embedding-8B",
-        "transcript": "requesty/mistral/voxtral-mini-latest"
-      }
-    }
-  }
+        "chat": "requesty/sference/glm-5.2",
+        "rerank": "requesty/nebius/qwen/qwen3-32b",
+        "embedding": "requesty/nebius/Qwen/Qwen3-Embedding-8B",
+        "transcript": "requesty/mistral/voxtral-mini-latest",
+      },
+    },
+  },
 }
 ```
+
+> **CRITICAL — model prefix must match the provider profile id.** A
+> `scenarioOverrides` value like `"requesty/sference/glm-5.2"` routes by splitting
+> on the first `/`: the leading segment (`requesty`) must be the **id of a
+> registered provider profile**, or the string is treated as one opaque model id
+> and fails to resolve (`CopilotPromptInvalid`).
+>
+> Therefore configure Requesty via **`providers.profiles` with `"id": "requesty"`**
+> (as above). Do **NOT** use the legacy `"providers.requesty": { … }` shape for
+> this: that shape auto-generates the profile id `requesty-default` (the
+> `${type}-default` convention in `toLegacyProfiles`), so `"requesty/…"` prefixes
+> would NOT match — you would have to write `"requesty-default/…"` instead. The
+> explicit-profile form is the supported configuration.
+>
+> **`image` is intentionally omitted** from the example above: it is blocked at
+> the Requesty account/policy level (see spike findings) and, in AFFiNE, routes
+> through a different (`/images/generations`) path than this chat gateway. It is
+> deferred. **`transcript` additionally requires a code follow-up** (the transcript
+> execution path hardcodes a Gemini provider preference that must be relaxed for
+> the override to reach Requesty — see §7).
 
 ### Non-goals (this iteration)
 
@@ -67,7 +94,7 @@ Established during context exploration (all paths under
   (`default_model_registry_variants()`).
 - **`backend_kind` is a closed enum**
   (`openai_chat | openai_responses | anthropic | cloudflare_workers_ai |
-  gemini_api | gemini_vertex | fal | anthropic_vertex` — see
+gemini_api | gemini_vertex | fal | anthropic_vertex` — see
   `native/src/llm/core/contracts/mod.rs`). There is no `requesty` kind and we do
   **not** add one; Requesty is OpenAI-Chat-compatible, so all Requesty variants
   use `backend_kind: "openai_chat"`.
@@ -75,7 +102,7 @@ Established during context exploration (all paths under
   registered under a custom id with a model-id prefix (`requesty/<model>`); the
   prefix routes to the profile and is stripped before registry lookup.
 - **Routing chokepoint:** `CopilotProviderFactory.resolveRoutes(cond, filter,
-  context)` (`providers/factory.ts`) is where `cond.modelId` and
+context)` (`providers/factory.ts`) is where `cond.modelId` and
   `context.featureKind` are both available for every output type.
 - **Per-modality execution paths differ:**
   - chat / structured / embedding / image → provider `getDriverSpec()` +
@@ -139,13 +166,13 @@ JSON)?
 
 **Curated model set + capabilities:**
 
-| Requesty model id | Scenario(s) | backend_kind | Capabilities (input → output) | Risk |
-|---|---|---|---|---|
-| `sference/glm-5.2` | chat | openai_chat | text → text, object, structured; tools | Low |
-| `nebius/Qwen/Qwen3-Embedding-8B` | embedding | openai_chat | text → embedding | Low |
-| `nebius/qwen/qwen3-32b` | rerank | openai_chat | text → text (LLM reranker) | Medium |
-| `vertex/google/gemini-3.1-flash-image-preview` | image | openai_chat | text (+image) → image | High |
-| `mistral/voxtral-mini-latest` | transcript | openai_chat | audio → text | High |
+| Requesty model id                              | Scenario(s) | backend_kind | Capabilities (input → output)          | Risk   |
+| ---------------------------------------------- | ----------- | ------------ | -------------------------------------- | ------ |
+| `sference/glm-5.2`                             | chat        | openai_chat  | text → text, object, structured; tools | Low    |
+| `nebius/Qwen/Qwen3-Embedding-8B`               | embedding   | openai_chat  | text → embedding                       | Low    |
+| `nebius/qwen/qwen3-32b`                        | rerank      | openai_chat  | text → text (LLM reranker)             | Medium |
+| `vertex/google/gemini-3.1-flash-image-preview` | image       | openai_chat  | text (+image) → image                  | High   |
+| `mistral/voxtral-mini-latest`                  | transcript  | openai_chat  | audio → text                           | High   |
 
 Exact capability flags (vision, tool use, reasoning, attachment kinds) are
 finalized during implementation from Requesty's model metadata.
@@ -157,7 +184,7 @@ finalized during implementation from Requesty's model metadata.
 - **rerank** — Affine builds rerank as a chat-completions request, so a chat
   model behind Requesty works in principle. Validate the native rerank builder
   accepts the model and returns usable ordering.
-- **image** — requires Requesty to proxy image *generation* for the chosen model
+- **image** — requires Requesty to proxy image _generation_ for the chosen model
   under a protocol Affine's image path emits (`openai_images` / `gemini`). If
   Requesty does not expose a compatible image endpoint for this model, this
   scenario is documented as unsupported until a compatible model/endpoint exists.
@@ -193,14 +220,18 @@ Behavior:
   `chat|action → chat`, `image → image`, `embedding → embedding`,
   `rerank → rerank`, `transcript → transcript`.
 - Injection at the single chokepoint `CopilotProviderFactory.resolveRoutes`:
-  when `scenarioOverrides.enabled`, set `cond.modelId ??= resolver(featureKind)`.
-  (Transcript, which does not flow through `resolveRoutes`, consults the resolver
-  at its own model-selection point in the transcript service.)
-- **Precedence:** an explicit user-selected model wins; otherwise the scenario
-  override replaces the prompt/default model. (Open for review: force-always vs.
-  user-wins.)
-- **Config validation** at load: warn if any `scenarioOverrides.models` value is
-  not present in the curated registry (catches typos before a request fails).
+  when `scenarioOverrides.enabled`, `resolve(cond, featureKind)` **unconditionally
+  replaces** `cond.modelId` with the scenario model. (Transcript, which does not
+  flow through `resolveRoutes`, consults the resolver at its own model-selection
+  point in the transcript service.)
+- **Precedence — FORCE-ALWAYS (as implemented):** when enabled and the scenario
+  has a configured model, the override replaces whatever model the request/prompt/
+  default supplied. (This resolves the design's original "force-always vs.
+  user-wins" question in favor of force-always — the "user-wins" variant was
+  inert because callers always pre-populate `cond.modelId` before routing.)
+- **Config validation** helper `warnUnknownModels` exists but is **not yet wired**
+  to a startup hook (deferred); a mis-set model currently surfaces as a
+  `CopilotPromptInvalid` at request time rather than a load-time warning.
 
 ## 4. Error handling
 
@@ -235,12 +266,25 @@ Behavior:
 5. **Remaining modalities** — rerank, image, then transcript (incl. transcript
    service wiring), each landing behind its validation result.
 
-## 7. Open questions / risks
+## 7. Open questions / risks / known follow-ups
 
-- **Spike outcome for Layer 2** is the primary risk. If `ModelRegistryVariant`
-  is not externally constructible, the fork path adds meaningful overhead
-  (vendoring + building a shared crate).
-- **Image and transcript** may prove unsupported through Requesty for the chosen
-  models; treated as documented limitations, not blockers for the other three.
-- **Override precedence** (force-always vs. user-selection-wins) to be confirmed
-  at review.
+- **Spike outcome for Layer 2** — RESOLVED: `ModelRegistryVariant` derives
+  `Deserialize` with public fields, so in-repo append works (Mechanism A); no
+  `llm_adapter` fork needed.
+- **Override precedence** — RESOLVED to **force-always** (see §3).
+- **Image** — deferred: blocked at the Requesty account/policy level, and routes
+  through AFFiNE's `/images/generations` path rather than this chat gateway. Needs
+  Requesty dashboard enablement + a chat-image-vs-images-endpoint wiring decision.
+- **KNOWN FOLLOW-UP B — transcript Gemini preference (code):** the transcript
+  execution path (`transcript/service.ts` → `transcriptTask` →
+  `prepareStructuredRoutes(..., { prefer: CopilotProviderType.Gemini })`) applies a
+  hardcoded provider preference. `resolveModel`'s preferred-provider filter then
+  excludes every non-Gemini provider, so a `transcript` override pointing at a
+  `requesty/…` model yields **no route** ("No native structured provider route
+  prepared") — the transcript override is wired for _selection_ but cannot reach
+  Requesty at execution. Fix: drop/condition that `prefer` when a transcript
+  scenario override is active. (Chat/embedding/rerank are unaffected — they don't
+  set `prefer`.)
+- **KNOWN FOLLOW-UP — `warnUnknownModels` wiring:** helper exists, not wired to a
+  startup hook; no registry-enumeration API makes a clean known-set awkward.
+  Mis-set models fail loudly at request time, so low impact.
