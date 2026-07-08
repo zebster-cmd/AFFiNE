@@ -1,0 +1,224 @@
+name: Requesty Self-host Image
+
+# Fork-runnable adaptation of build-images.yml: builds a single-arch (linux/amd64)
+# self-host server image from this branch and pushes it to the FORK's GHCR
+# namespace (ghcr.io/<owner>/affine:requesty). No upstream secrets / environments;
+# multi-arch, Sentry/R2/Perfsee/pro keys are intentionally dropped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app-version:
+        description: 'App version to stamp'
+        type: string
+        default: '0.0.0-canary.0'
+      image-tag:
+        description: 'Tag for the pushed image'
+        type: string
+        default: 'requesty'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  BUILD_TYPE: canary
+
+jobs:
+  build-web:
+    name: Build @affine/web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Version
+        uses: ./.github/actions/setup-version
+        with:
+          app-version: ${{ inputs.app-version }}
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
+      - name: Build Core
+        run: yarn affine @affine/web build
+        env:
+          BUILD_TYPE: canary
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: ./packages/frontend/apps/web/dist
+          if-no-files-found: error
+
+  build-admin:
+    name: Build @affine/admin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Version
+        uses: ./.github/actions/setup-version
+        with:
+          app-version: ${{ inputs.app-version }}
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
+      - name: Build Admin
+        run: yarn affine @affine/admin build
+        env:
+          BUILD_TYPE: canary
+      - name: Upload admin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin
+          path: ./packages/frontend/admin/dist
+          if-no-files-found: error
+
+  build-mobile:
+    name: Build @affine/mobile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Version
+        uses: ./.github/actions/setup-version
+        with:
+          app-version: ${{ inputs.app-version }}
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
+      - name: Build Mobile
+        run: yarn affine @affine/mobile build
+        env:
+          BUILD_TYPE: canary
+      - name: Upload mobile artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile
+          path: ./packages/frontend/apps/mobile/dist
+          if-no-files-found: error
+
+  build-server-native:
+    name: Build Server native (amd64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Version
+        uses: ./.github/actions/setup-version
+        with:
+          app-version: ${{ inputs.app-version }}
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
+        with:
+          electron-install: false
+          extra-flags: workspaces focus @affine/server-native
+      - name: Build Rust
+        uses: ./.github/actions/build-rust
+        with:
+          target: x86_64-unknown-linux-gnu
+          package: '@affine/server-native'
+      - name: Rename server-native.x64.node
+        run: mv ./packages/backend/native/server-native.node ./packages/backend/native/server-native.x64.node
+      - name: Upload server-native
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-native-server-native.x64.node
+          path: ./packages/backend/native/server-native.x64.node
+          if-no-files-found: error
+
+  build-server:
+    name: Build Server
+    runs-on: ubuntu-latest
+    needs:
+      - build-server-native
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup Version
+        uses: ./.github/actions/setup-version
+        with:
+          app-version: ${{ inputs.app-version }}
+      - name: Setup Node.js
+        uses: ./.github/actions/setup-node
+        with:
+          electron-install: false
+          extra-flags: workspaces focus @affine/server @types/affine__env
+      - name: Download server-native
+        uses: actions/download-artifact@v4
+        with:
+          pattern: server-native-*
+          merge-multiple: true
+          path: ./packages/backend/native
+      - name: List server-native files
+        run: ls -alh ./packages/backend/native
+      - name: Build Server
+        run: yarn workspace @affine/server build
+      - name: Upload server dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-dist
+          path: ./packages/backend/server/dist
+          if-no-files-found: error
+
+  build-image:
+    name: Build & Push Image (amd64)
+    runs-on: ubuntu-latest
+    needs:
+      - build-server
+      - build-web
+      - build-mobile
+      - build-admin
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download server dist
+        uses: actions/download-artifact@v4
+        with:
+          name: server-dist
+          path: ./packages/backend/server/dist
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          logout: false
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          registry-url: https://npm.pkg.github.com
+          scope: '@toeverything'
+      - name: Download web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: ./packages/frontend/apps/web/dist
+      - name: Download mobile artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile
+          path: ./packages/frontend/apps/mobile/dist
+      - name: Download admin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: admin
+          path: ./packages/frontend/admin/dist
+      - name: Install Node.js dependencies (production)
+        run: |
+          yarn config set --json supportedArchitectures.cpu '["x64"]'
+          yarn config set --json supportedArchitectures.libc '["glibc"]'
+          yarn workspaces focus @affine/server --production
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate Prisma client
+        run: yarn workspace @affine/server prisma generate
+      - name: Mv node_modules
+        run: mv ./node_modules ./packages/backend/server
+      - name: Setup Version
+        uses: ./.github/actions/setup-version
+        with:
+          app-version: ${{ inputs.app-version }}
+      - name: Build backend Dockerfile
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          pull: true
+          platforms: linux/amd64
+          provenance: false
+          file: .github/deployment/node/Dockerfile
+          tags: ghcr.io/${{ github.repository_owner }}/affine:${{ inputs.image-tag }}
