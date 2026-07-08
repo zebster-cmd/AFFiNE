@@ -148,6 +148,16 @@ jobs:
           path: ./packages/backend/native
       - name: List server-native files
         run: ls -alh ./packages/backend/native
+      # native/index.js statically requires x64 + arm64 + armv7 .node files, so
+      # the rspack bundle must resolve all three. This is an amd64-only build, so
+      # stub the two missing arches with copies of x64 — at runtime on amd64 only
+      # x64 is ever require()'d, so the stubs are inert dead assets. (A real
+      # multi-arch release must instead build all three via the native matrix.)
+      - name: Stub missing-arch native (amd64-only build)
+        run: |
+          cd packages/backend/native
+          cp server-native.x64.node server-native.arm64.node
+          cp server-native.x64.node server-native.armv7.node
       - name: Build Server
         run: yarn workspace @affine/server build
       - name: Upload server dist
