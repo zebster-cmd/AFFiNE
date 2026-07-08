@@ -1,0 +1,120 @@
+# AFFiNE + Requesty — Coolify deployment
+#
+# Point a Coolify "Docker Compose" resource at this file. It runs the
+# fork-built image (Requesty provider + native variants + scenarioOverrides),
+# a pgvector Postgres, and Redis. Config is generated at boot from a few plain
+# env vars — set them in Coolify's Environment Variables UI. The only required
+# one is REQUESTY_API_KEY.
+#
+# The image (ghcr.io/<owner>/affine:requesty) is built by the fork CI workflow
+# `.github/workflows/requesty-selfhost-image.yml`. It must be pullable: either
+# make the GHCR package public, or add registry credentials in Coolify.
+#
+# See .coolify/README.md for the full env-var list and notes.
+
+services:
+  affine:
+    image: ${AFFINE_IMAGE:-ghcr.io/zebster-cmd/affine:requesty}
+    # Generate /root/.affine/config/config.json from env, run DB migrations,
+    # then start the server. `$$VAR` escapes Compose interpolation so the
+    # container shell expands the values from `environment:` below (keeps the
+    # API key out of the recorded command line).
+    entrypoint: ['/bin/sh', '-c']
+    command: |
+      set -e
+      mkdir -p /root/.affine/config
+      cat > /root/.affine/config/config.json <<JSON
+      {
+        "copilot": {
+          "enabled": true,
+          "providers.profiles": [
+            {
+              "id": "requesty",
+              "type": "requesty",
+              "config": {
+                "apiKey": "$${REQUESTY_API_KEY}",
+                "baseURL": "$${REQUESTY_BASE_URL}"
+              }
+            }
+          ],
+          "scenarioOverrides": {
+            "enabled": $${REQUESTY_SCENARIOS_ENABLED},
+            "models": {
+              "chat": "$${REQUESTY_MODEL_CHAT}",
+              "embedding": "$${REQUESTY_MODEL_EMBEDDING}",
+              "rerank": "$${REQUESTY_MODEL_RERANK}"
+            }
+          }
+        }
+      }
+      JSON
+      echo "[requesty] wrote config.json (key length: $${#REQUESTY_API_KEY})"
+      node ./scripts/self-host-predeploy.js
+      exec node ./dist/main.js
+    environment:
+      # --- infra (usually leave as-is) ---
+      REDIS_SERVER_HOST: redis
+      DATABASE_URL: postgresql://${DB_USERNAME:-affine}:${DB_PASSWORD:-affine}@postgres:5432/${DB_DATABASE:-affine}
+      AFFINE_INDEXER_ENABLED: 'false'
+      # Set this to your Coolify-assigned domain (https://...), or use Coolify's
+      # SERVICE_FQDN magic. AFFiNE needs its external URL for links/auth.
+      AFFINE_SERVER_EXTERNAL_URL: ${AFFINE_SERVER_EXTERNAL_URL:-}
+      # --- Requesty (set REQUESTY_API_KEY in Coolify; rest have sane defaults) ---
+      REQUESTY_API_KEY: ${REQUESTY_API_KEY}
+      REQUESTY_BASE_URL: ${REQUESTY_BASE_URL:-https://router.requesty.ai/v1}
+      REQUESTY_SCENARIOS_ENABLED: ${REQUESTY_SCENARIOS_ENABLED:-true}
+      REQUESTY_MODEL_CHAT: ${REQUESTY_MODEL_CHAT:-requesty/sference/glm-5.2}
+      REQUESTY_MODEL_EMBEDDING: ${REQUESTY_MODEL_EMBEDDING:-requesty/nebius/Qwen/Qwen3-Embedding-8B}
+      REQUESTY_MODEL_RERANK: ${REQUESTY_MODEL_RERANK:-requesty/nebius/qwen/qwen3-32b}
+    expose:
+      - '3010'
+    volumes:
+      - affine-storage:/root/.affine/storage
+      - affine-config:/root/.affine/config
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis
+    healthcheck:
+      test: ['CMD', 'redis-cli', '--raw', 'incr', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - affine-redis:/data
+    restart: unless-stopped
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-affine}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-affine}
+      POSTGRES_DB: ${DB_DATABASE:-affine}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'pg_isready',
+          '-U',
+          '${DB_USERNAME:-affine}',
+          '-d',
+          '${DB_DATABASE:-affine}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - affine-db:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  affine-storage:
+  affine-config:
+  affine-redis:
+  affine-db:
