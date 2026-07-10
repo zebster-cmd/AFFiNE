@@ -16,7 +16,7 @@ on:
       app-version:
         description: 'App version to stamp'
         type: string
-        default: '0.0.0-canary.0'
+        default: '0.27.0'
       image-tag:
         description: 'Tag for the pushed image'
         type: string
@@ -38,7 +38,7 @@ jobs:
       - name: Setup Version
         uses: ./.github/actions/setup-version
         with:
-          app-version: ${{ inputs.app-version || '0.0.0-canary.0' }}
+          app-version: ${{ inputs.app-version || '0.27.0' }}
       - name: Setup Node.js
         uses: ./.github/actions/setup-node
       - name: Build Core
@@ -60,7 +60,7 @@ jobs:
       - name: Setup Version
         uses: ./.github/actions/setup-version
         with:
-          app-version: ${{ inputs.app-version || '0.0.0-canary.0' }}
+          app-version: ${{ inputs.app-version || '0.27.0' }}
       - name: Setup Node.js
         uses: ./.github/actions/setup-node
       - name: Build Admin
@@ -82,7 +82,7 @@ jobs:
       - name: Setup Version
         uses: ./.github/actions/setup-version
         with:
-          app-version: ${{ inputs.app-version || '0.0.0-canary.0' }}
+          app-version: ${{ inputs.app-version || '0.27.0' }}
       - name: Setup Node.js
         uses: ./.github/actions/setup-node
       - name: Build Mobile
@@ -112,7 +112,7 @@ jobs:
       - name: Setup Version
         uses: ./.github/actions/setup-version
         with:
-          app-version: ${{ inputs.app-version || '0.0.0-canary.0' }}
+          app-version: ${{ inputs.app-version || '0.27.0' }}
       - name: Setup Node.js
         uses: ./.github/actions/setup-node
         with:
@@ -142,7 +142,7 @@ jobs:
       - name: Setup Version
         uses: ./.github/actions/setup-version
         with:
-          app-version: ${{ inputs.app-version || '0.0.0-canary.0' }}
+          app-version: ${{ inputs.app-version || '0.27.0' }}
       - name: Setup Node.js
         uses: ./.github/actions/setup-node
         with:
@@ -235,7 +235,7 @@ jobs:
       - name: Setup Version
         uses: ./.github/actions/setup-version
         with:
-          app-version: ${{ inputs.app-version || '0.0.0-canary.0' }}
+          app-version: ${{ inputs.app-version || '0.27.0' }}
       - name: Build backend Dockerfile
         uses: docker/build-push-action@v6
         with:
