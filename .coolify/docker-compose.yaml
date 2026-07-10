@@ -87,6 +87,19 @@ services:
       REQUESTY_MODEL_RERANK: ${REQUESTY_MODEL_RERANK:-requesty/nebius/qwen/qwen3-32b}
     expose:
       - '3010'
+    # /info is public (no auth) and returns the server version — a good readiness
+    # probe. The slim image has no curl/wget, so use Node 22's global fetch.
+    # start_period is generous: first boot runs DB migrations before listening.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3010/info').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     volumes:
       - affine-storage:/root/.affine/storage
       - affine-config:/root/.affine/config
