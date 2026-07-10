@@ -111,6 +111,17 @@ function AiPage() {
   }, [copilot]);
 
   const save = useCallback(async () => {
+    // Guard the most common misconfiguration: routing on with no key anywhere.
+    // Without this the failure only shows up later as an opaque
+    // "no copilot provider available" error on the first AI request.
+    if (enabled && !apiKey.trim() && !hasStoredKey) {
+      notify.error({
+        title: 'API key required',
+        message:
+          'Enter a Requesty API key before enabling scenario routing, or AI requests will fail.',
+      });
+      return;
+    }
     setSaving(true);
     try {
       // Upsert the requesty profile, preserving any other configured profiles.
@@ -170,7 +181,16 @@ function AiPage() {
     } finally {
       setSaving(false);
     }
-  }, [apiKey, baseURL, enabled, models, copilot, saveUpdates, mutate]);
+  }, [
+    apiKey,
+    baseURL,
+    enabled,
+    models,
+    copilot,
+    hasStoredKey,
+    saveUpdates,
+    mutate,
+  ]);
 
   return (
     <div className="h-dvh flex-1 flex-col flex">

@@ -15,7 +15,7 @@ import {
   type CopilotImageOptions,
   type CopilotModelBackendKind,
   type CopilotProviderModel,
-  type CopilotProviderType,
+  CopilotProviderType,
   type CopilotStructuredOptions,
   EmbeddingMessage,
   type ModelAttachmentCapability,
@@ -124,7 +124,40 @@ export function resolveProviderModelSelection(
       modelId: cond.modelId,
     }).variant;
     if (!resolved) {
-      return;
+      // Requesty is an open gateway: let admins route to ANY model id, even one
+      // not in the curated native registry. Scoped strictly to the Requesty
+      // provider (via context.type) so registry gating is unchanged for every
+      // other provider, including OpenAI-flavoured BYOK on the same backend.
+      // Synthesize a text/object/structured chat capability (plus the requested
+      // output type); unsupported requests still fail the capability match.
+      if (context.type !== CopilotProviderType.Requesty) {
+        return;
+      }
+      const synthetic: ResolvedProviderModel = {
+        id: cond.modelId,
+        name: cond.modelId,
+        backendKind: context.backendKind,
+        canonicalKey: cond.modelId,
+        capabilities: [
+          {
+            input: [ModelInputType.Text],
+            output: unique([
+              ModelOutputType.Text,
+              ModelOutputType.Object,
+              ModelOutputType.Structured,
+              ...(cond.outputType ? [cond.outputType] : []),
+            ]) as ModelOutputType[],
+          },
+        ],
+      };
+      const matchedSynthetic = llmMatchModelCapabilities([synthetic], {
+        ...cond,
+        modelId: synthetic.id,
+      });
+      if (!matchedSynthetic) {
+        return;
+      }
+      return { kind: 'configured', model: synthetic };
     }
 
     const model = toProviderModel(resolved);
