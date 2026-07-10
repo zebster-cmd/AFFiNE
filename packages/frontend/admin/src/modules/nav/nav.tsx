@@ -5,6 +5,7 @@ import {
   BarChart3Icon,
   LayoutDashboardIcon,
   ListChecksIcon,
+  SparklesIcon,
 } from 'lucide-react';
 
 import { NavItem } from './nav-item';
@@ -58,12 +59,12 @@ export function Nav({ isCollapsed = false }: NavProps) {
           label="Queue"
           isCollapsed={isCollapsed}
         />
-        {/* <NavItem
-          to="/admin/ai"
-          icon={<AiOutlineIcon fontSize={20} />}
-          label="AI"
+        <NavItem
+          to={ROUTES.admin.ai}
+          icon={<SparklesIcon size={18} />}
+          label="Requesty AI"
           isCollapsed={isCollapsed}
-        /> */}
+        />
         <SettingsItem isCollapsed={isCollapsed} />
         <NavItem
           to={ROUTES.admin.about}

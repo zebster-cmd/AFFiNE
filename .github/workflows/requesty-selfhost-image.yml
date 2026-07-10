@@ -6,11 +6,11 @@ name: Requesty Self-host Image
 # multi-arch, Sentry/R2/Perfsee/pro keys are intentionally dropped.
 
 on:
+  # Rebuild the self-host image on every push to the branch (code or workflow
+  # changes both produce a new image to redeploy in Coolify).
   push:
     branches:
       - requesty-provider-spec
-    paths:
-      - '.github/workflows/requesty-selfhost-image.yml'
   workflow_dispatch:
     inputs:
       app-version:
