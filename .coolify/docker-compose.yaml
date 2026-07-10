@@ -19,38 +19,57 @@ services:
     # then start the server. `$$VAR` escapes Compose interpolation so the
     # container shell expands the values from `environment:` below (keeps the
     # API key out of the recorded command line).
+    # NOTE: `command` MUST be a LIST with a single block-scalar element.
+    # A plain string `command: |` is shell-word-split by Compose, so only the
+    # first token ("mkdir") reaches `sh -c` and the container crash-loops.
+    # The list form passes the whole script as one argument to `sh -c`.
     entrypoint: ['/bin/sh', '-c']
-    command: |
-      set -e
-      mkdir -p /root/.affine/config
-      cat > /root/.affine/config/config.json <<JSON
-      {
-        "copilot": {
-          "enabled": true,
-          "providers.profiles": [
-            {
-              "id": "requesty",
-              "type": "requesty",
-              "config": {
-                "apiKey": "$${REQUESTY_API_KEY}",
-                "baseURL": "$${REQUESTY_BASE_URL}"
+    command:
+      - |
+        mkdir -p /root/.affine/config
+        cat > /root/.affine/config/config.json <<JSON
+        {
+          "copilot": {
+            "enabled": true,
+            "providers.profiles": [
+              {
+                "id": "requesty",
+                "type": "requesty",
+                "config": {
+                  "apiKey": "$${REQUESTY_API_KEY}",
+                  "baseURL": "$${REQUESTY_BASE_URL}"
+                }
               }
-            }
-          ],
-          "scenarioOverrides": {
-            "enabled": $${REQUESTY_SCENARIOS_ENABLED},
-            "models": {
-              "chat": "$${REQUESTY_MODEL_CHAT}",
-              "embedding": "$${REQUESTY_MODEL_EMBEDDING}",
-              "rerank": "$${REQUESTY_MODEL_RERANK}"
+            ],
+            "scenarioOverrides": {
+              "enabled": $${REQUESTY_SCENARIOS_ENABLED},
+              "models": {
+                "chat": "$${REQUESTY_MODEL_CHAT}",
+                "embedding": "$${REQUESTY_MODEL_EMBEDDING}",
+                "rerank": "$${REQUESTY_MODEL_RERANK}"
+              }
             }
           }
         }
-      }
-      JSON
-      echo "[requesty] wrote config.json (key length: $${#REQUESTY_API_KEY})"
-      node ./scripts/self-host-predeploy.js
-      exec node ./dist/main.js
+        JSON
+        echo "===================== REQUESTY DIAGNOSTICS ====================="
+        echo "[requesty] config.json written. Contents (apiKey hidden):"
+        grep -v '"apiKey"' /root/.affine/config/config.json
+        echo "[requesty] REQUESTY_API_KEY length: $${#REQUESTY_API_KEY}"
+        echo "[requesty] REQUESTY_BASE_URL: $${REQUESTY_BASE_URL}"
+        echo "[requesty] AFFINE_SERVER_EXTERNAL_URL: $${AFFINE_SERVER_EXTERNAL_URL}"
+        echo "==============================================================="
+        echo "[requesty] STAGE 1: predeploy / prisma migrations"
+        if node ./scripts/self-host-predeploy.js; then
+          echo "[requesty] STAGE 1 OK"
+        else
+          echo "!!!!! [requesty] STAGE 1 (PREDEPLOY) FAILED (exit $$?). Holding container so this log stays readable. Read the lines ABOVE this one. !!!!!"
+          sleep infinity
+        fi
+        echo "[requesty] STAGE 2: starting server (node ./dist/main.js)"
+        node ./dist/main.js
+        echo "!!!!! [requesty] STAGE 2 (SERVER) EXITED (exit $$?). Holding container so this log stays readable. Read the lines ABOVE this one. !!!!!"
+        sleep infinity
     environment:
       # --- infra (usually leave as-is) ---
       REDIS_SERVER_HOST: redis
