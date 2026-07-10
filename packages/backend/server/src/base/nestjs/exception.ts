@@ -175,8 +175,25 @@ export const GatewayErrorWrapper = (event: string): MethodDecorator => {
   };
 };
 
+const sseErrorLogger = new Logger('CopilotSseError');
+
 export function mapSseError(originalError: any, info: object) {
   const error = mapAnyError(originalError);
+  // A generic InternalServerError masks the real cause (e.g. an upstream
+  // provider/HTTP failure from the copilot backend). error.log below only
+  // records the opaque "internal_server_error", so surface the underlying
+  // cause here — otherwise self-host operators cannot diagnose provider issues.
+  // Benign client aborts are skipped to avoid log noise.
+  if (error instanceof InternalServerError) {
+    const cause = (error as any).cause ?? originalError;
+    const message = cause?.message ?? String(cause);
+    if (cause?.name !== 'AbortError' && !/abort/i.test(message)) {
+      sseErrorLogger.error(
+        `Unhandled SSE error cause: ${message}`,
+        cause?.stack
+      );
+    }
+  }
   error.log('Sse', info);
   metrics.sse.counter('error').add(1, { status: error.status });
   return of({
