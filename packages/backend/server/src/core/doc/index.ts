@@ -8,6 +8,7 @@ import { QuotaModule } from '../quota';
 import { StorageModule } from '../storage';
 import { PgUserspaceDocStorageAdapter } from './adapters/userspace';
 import { PgWorkspaceDocStorageAdapter } from './adapters/workspace';
+import { DatabaseWriter } from './database-writer';
 import { DocEventsListener } from './event';
 import { DocStorageCronJob } from './job';
 import { DocStorageOptions } from './options';
@@ -25,11 +26,13 @@ import { DocWriter } from './writer';
     DatabaseDocReader,
     DocEventsListener,
     DocWriter,
+    DatabaseWriter,
   ],
   exports: [
     DatabaseDocReader,
     DocReader,
     DocWriter,
+    DatabaseWriter,
     PgWorkspaceDocStorageAdapter,
     PgUserspaceDocStorageAdapter,
   ],
@@ -49,4 +52,5 @@ export {
   listBoardsFromBinary,
   readBoardFromBinary,
 } from './database-reader';
+export { DatabaseWriter } from './database-writer';
 export { DocStorageAdapter, type Editor } from './storage';
