@@ -8,12 +8,28 @@ import type {
   ViewJSON,
 } from './database-types';
 
+/**
+ * The nested `groupBy` descriptor a real BlockSuite kanban view stores
+ * (`GroupBy` in `blocksuite/affine/data-view/src/core/common/types.ts:1-9`).
+ * Only `columnId` is needed here.
+ */
+interface StoredGroupBy {
+  type?: string;
+  columnId: string;
+  name?: string;
+}
+
 /** The plain object shape written to each entry of `prop:views` (see `buildBoardDoc`). */
 interface StoredView {
   id: string;
   name: string;
   mode: string;
-  groupBy?: string;
+  /**
+   * Real BlockSuite kanban views store this as the nested `StoredGroupBy`
+   * object; a flat column-id string is accepted defensively for older/other
+   * shapes. `resolveGroupByColumnId` normalizes both to the column id.
+   */
+  groupBy?: string | StoredGroupBy;
   /**
    * Kanban-only, per the design doc (`GroupProperty` in
    * `blocksuite/affine/data-view/src/core/common/types.ts`): array order is
@@ -118,6 +134,20 @@ function readRows(
 }
 
 /**
+ * Normalizes a stored view's `groupBy` (the real nested `GroupBy` object, or
+ * a defensive flat column-id string) to the group column's id, or
+ * `undefined` when absent.
+ */
+function resolveGroupByColumnId(
+  groupBy: string | StoredGroupBy | undefined
+): string | undefined {
+  if (!groupBy) {
+    return undefined;
+  }
+  return typeof groupBy === 'string' ? groupBy : groupBy.columnId;
+}
+
+/**
  * Groups a kanban view's cards by the raw (undecoded) value of each row's
  * group-by cell, in child order. Groups are ordered by their first
  * appearance in the stored `groupProperties` (if any), then by first
@@ -131,7 +161,7 @@ function resolveKanbanGroups(
   groupColumn: StoredColumnEntry | undefined,
   storedView: StoredView
 ): { value: string; cardRowIds: string[] }[] {
-  const groupByColumnId = storedView.groupBy;
+  const groupByColumnId = resolveGroupByColumnId(storedView.groupBy);
   if (!groupByColumnId) {
     return [];
   }
@@ -194,10 +224,11 @@ function readViews(
       name: storedView.name,
       mode: storedView.mode,
     };
-    if (storedView.groupBy) {
-      view.groupByColumnId = storedView.groupBy;
+    const groupByColumnId = resolveGroupByColumnId(storedView.groupBy);
+    if (groupByColumnId) {
+      view.groupByColumnId = groupByColumnId;
       if (storedView.mode === 'kanban') {
-        const groupColumn = columnsById.get(storedView.groupBy);
+        const groupColumn = columnsById.get(groupByColumnId);
         view.groups = resolveKanbanGroups(
           childrenIds,
           cells,

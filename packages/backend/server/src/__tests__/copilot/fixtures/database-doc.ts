@@ -103,7 +103,23 @@ export function buildBoardDoc(spec: BuildBoardDocSpec): Uint8Array {
         id: view.id,
         name: view.name,
         mode: view.mode,
-        ...(view.groupByColumnId ? { groupBy: view.groupByColumnId } : {}),
+        // Real BlockSuite kanban views store `groupBy` as the nested
+        // `GroupBy` object (`{ type: 'groupBy', columnId, name, ... }`, see
+        // `blocksuite/affine/data-view/src/core/common/types.ts:1-9`), not a
+        // flat column-id string. Mirror that so reader tests exercise the
+        // real shape. `name` is the group column's display name.
+        ...(view.groupByColumnId
+          ? {
+              groupBy: {
+                type: 'groupBy',
+                columnId: view.groupByColumnId,
+                name:
+                  spec.columns.find(
+                    column => column.id === view.groupByColumnId
+                  )?.name ?? '',
+              },
+            }
+          : {}),
       }))
     );
     db.set('prop:views', views);

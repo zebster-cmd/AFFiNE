@@ -73,7 +73,7 @@ test('readBoardFromBinary projects columns, rows, and views from a table board',
   t.deepEqual(board.views, [{ id: 'v1', name: 'Table', mode: 'table' }]);
 });
 
-test('readBoardFromBinary resolves kanban groups from cell values in child order when no groupProperties are stored', t => {
+test('readBoardFromBinary resolves kanban groups from a real nested groupBy object in child order when no groupProperties are stored', t => {
   const bin = buildBoardDoc({
     title: 'Board',
     columns: [
@@ -105,10 +105,28 @@ test('readBoardFromBinary resolves kanban groups from cell values in child order
     ],
   });
 
+  // Guard: the fixture must store the real BlockSuite `GroupBy` OBJECT, not a
+  // flat column-id string — otherwise the reader's real-shape path is never
+  // exercised. A flat string here would silently collapse every card into
+  // one ungrouped bucket against a real editor board.
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, bin);
+  const rawView = (
+    (doc.getMap('blocks').get(DEFAULT_DATABASE_BLOCK_ID) as Y.Map<unknown>).get(
+      'prop:views'
+    ) as Y.Array<Record<string, unknown>>
+  ).get(0);
+  t.deepEqual(rawView.groupBy, {
+    type: 'groupBy',
+    columnId: 'c_status',
+    name: 'Status',
+  });
+
   const board = readBoardFromBinary(bin, DEFAULT_DATABASE_BLOCK_ID);
   const view = board.views[0];
 
   t.is(view.mode, 'kanban');
+  // The tool-facing projection flattens groupBy back to just the column id.
   t.is(view.groupByColumnId, 'c_status');
   t.deepEqual(view.groups, [
     { value: 'Todo', cardRowIds: ['r1', 'r3'] },
@@ -152,7 +170,9 @@ test('readBoardFromBinary honors stored groupProperties ordering and manuallyCar
   // directly into the doc the way a real BlockSuite kanban view stores it.
   // `prop:views` is a Y.Array of plain objects, so mutating the retrieved
   // element in place would not propagate (per the Task 2 writer caveat) —
-  // delete + re-insert instead.
+  // delete + re-insert instead. The spread of `...view` preserves the
+  // fixture's real nested `groupBy` object (`{ type, columnId, name }`), so
+  // this test also runs against the real shape end-to-end.
   const doc = new Y.Doc();
   Y.applyUpdate(doc, bin);
   const blocks = doc.getMap('blocks');
