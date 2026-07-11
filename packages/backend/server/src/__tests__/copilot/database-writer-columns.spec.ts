@@ -190,7 +190,7 @@ test('applyOps delete_column removes the column and purges its cells from every 
   t.true(delta.length < merged.length);
 });
 
-test('applyOps throws for a database op not yet implemented', async t => {
+test('applyOps throws for an unknown database op', async t => {
   const bin = buildBoardDoc({
     title: 'Board',
     columns: [{ id: 'c_title', name: 'Title', type: 'title' }],
@@ -201,7 +201,9 @@ test('applyOps throws for a database op not yet implemented', async t => {
   const { writer } = makeWriter(bin);
   await t.throwsAsync(() =>
     writer.applyOps('ws1', 'doc1', DEFAULT_DATABASE_BLOCK_ID, [
-      { op: 'add_row', title: 'New row' },
+      // All eight real ops are implemented; only an unrecognized op hits the
+      // switch's default branch.
+      { op: 'totally_unknown_op' } as any,
     ])
   );
 });
