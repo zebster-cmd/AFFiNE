@@ -4,11 +4,19 @@ import * as Y from 'yjs';
 
 import { EventBus } from '../../base';
 import { PgWorkspaceDocStorageAdapter } from './adapters/workspace';
-import type { StoredColumn, StoredOption } from './database-codec';
+import {
+  encodeCell,
+  isReadOnlyType,
+  type StoredColumn,
+  type StoredOption,
+} from './database-codec';
 import type {
   AddColumnOp,
+  AddRowOp,
   DatabaseOp,
   DeleteColumnOp,
+  DeleteRowOp,
+  UpdateCellOp,
   UpdateColumnOp,
 } from './database-types';
 
@@ -95,6 +103,15 @@ export class DatabaseWriter {
             break;
           case 'delete_column':
             this.deleteColumn(ctx, op);
+            break;
+          case 'add_row':
+            this.addRow(ctx, op);
+            break;
+          case 'update_cell':
+            this.updateCell(ctx, op);
+            break;
+          case 'delete_row':
+            this.deleteRow(ctx, op);
             break;
           default:
             throw new Error(`Database op "${op.op}" is not yet implemented`);
@@ -212,6 +229,108 @@ export class DatabaseWriter {
       if (row.has(op.columnId)) {
         row.delete(op.columnId);
       }
+    }
+  }
+
+  private addRow(ctx: BoardCtx, op: AddRowOp): void {
+    const rowId = nanoid();
+
+    const block = new Y.Map<unknown>();
+    block.set('sys:id', rowId);
+    block.set('sys:flavour', 'affine:paragraph');
+    block.set('sys:version', 1);
+    block.set('sys:children', new Y.Array<string>());
+    block.set('prop:text', new Y.Text(op.title ?? ''));
+    ctx.blocks.set(rowId, block);
+
+    // Y.Array.push is tracked incrementally by Yjs (unlike mutating an
+    // element already in the array, see the applyToBinary caveat above).
+    const dbChildren = ctx.db.get('sys:children') as Y.Array<string>;
+    dbChildren.push([rowId]);
+
+    const rowCells = new Y.Map<unknown>();
+    ctx.cells.set(rowId, rowCells);
+
+    for (const [columnId, value] of Object.entries(op.cells ?? {})) {
+      this.writeCell(ctx, rowId, columnId, value);
+    }
+  }
+
+  private updateCell(ctx: BoardCtx, op: UpdateCellOp): void {
+    const idx = requireColumnIndex(ctx.columns, op.columnId);
+    const column = ctx.columns.get(idx);
+
+    if (column.type === 'title') {
+      const block = ctx.blocks.get(op.rowId) as Y.Map<unknown> | undefined;
+      if (!block) {
+        throw new NotFoundException(`Row "${op.rowId}" not found`);
+      }
+      block.set('prop:text', new Y.Text(String(op.value)));
+      return;
+    }
+
+    this.writeCell(ctx, op.rowId, op.columnId, op.value);
+  }
+
+  private deleteRow(ctx: BoardCtx, op: DeleteRowOp): void {
+    const dbChildren = ctx.db.get('sys:children') as Y.Array<string>;
+    const idx = dbChildren.toArray().indexOf(op.rowId);
+    if (idx === -1) {
+      throw new NotFoundException(`Row "${op.rowId}" not found`);
+    }
+    dbChildren.delete(idx, 1);
+    ctx.blocks.delete(op.rowId);
+    ctx.cells.delete(op.rowId);
+  }
+
+  /**
+   * Writes a single non-title cell value: encodes `value` for `columnId`'s
+   * column, rejecting read-only columns, then sets it on the row's cell
+   * `Y.Map` (creating the row's cell map / the cell itself if missing).
+   *
+   * CAVEAT: `encodeCell` may auto-create a select/multi-select option by
+   * mutating `column.data.options` in place - a plain-object mutation inside
+   * `ctx.columns` (a `Y.Array` of plain objects) that Yjs's state-vector
+   * delta does NOT observe (see applyToBinary's caveat). So after encoding,
+   * always re-persist the (possibly-mutated) column back into `ctx.columns`
+   * by replacing the element, exactly like `updateColumn`/`deleteColumn` do.
+   */
+  private writeCell(
+    ctx: BoardCtx,
+    rowId: string,
+    columnId: string,
+    value: unknown
+  ): void {
+    const idx = requireColumnIndex(ctx.columns, columnId);
+    const column = ctx.columns.get(idx);
+
+    if (isReadOnlyType(column.type)) {
+      throw new Error(
+        `Column "${columnId}" has read-only type "${column.type}" and cannot be written`
+      );
+    }
+
+    const encoded = encodeCell(column, value, ctx.doc);
+
+    // Re-persist the column element in case encodeCell auto-created a select/
+    // multi-select option - see this method's caveat doc above.
+    ctx.columns.delete(idx, 1);
+    ctx.columns.insert(idx, [column]);
+
+    let rowCells = ctx.cells.get(rowId) as Y.Map<unknown> | undefined;
+    if (!rowCells) {
+      rowCells = new Y.Map<unknown>();
+      ctx.cells.set(rowId, rowCells);
+    }
+
+    const existingCell = rowCells.get(columnId) as Y.Map<unknown> | undefined;
+    if (existingCell) {
+      existingCell.set('value', encoded);
+    } else {
+      const cell = new Y.Map<unknown>();
+      cell.set('columnId', columnId);
+      cell.set('value', encoded);
+      rowCells.set(columnId, cell);
     }
   }
 
