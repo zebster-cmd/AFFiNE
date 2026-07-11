@@ -37,12 +37,20 @@ test('maps embedding/rerank one-to-one', t => {
   );
 });
 
-test('overrides the pre-set model when enabled', t => {
+test('chat honors an explicit model selection (picker wins over the default)', t => {
   const out = resolver(ENABLED).resolve(
     { modelId: 'requesty/openai/gpt-4o' },
     'chat'
   );
-  t.is(out.modelId, 'requesty/sference/glm-5.2');
+  t.is(out.modelId, 'requesty/openai/gpt-4o');
+});
+
+test('non-chat scenarios still force over a pre-set model', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'requesty/openai/gpt-4o' },
+    'embedding'
+  );
+  t.is(out.modelId, 'requesty/nebius/Qwen/Qwen3-Embedding-8B');
 });
 
 test('does nothing when disabled', t => {

@@ -702,8 +702,10 @@
   },
   {
     "name": "Chat With AFFiNE AI",
-    "model": "gemini-2.5-flash",
+    "model": "sference/glm-5.2",
     "optionalModels": [
+      "sference/glm-5.2",
+      "nebius/qwen/qwen3-32b",
       "gemini-2.5-flash",
       "gemini-2.5-pro",
       "gemini-3.5-flash",

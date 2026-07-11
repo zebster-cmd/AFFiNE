@@ -40,7 +40,21 @@ export class ScenarioModelResolver {
     featureKind?: string
   ): ModelFullConditions {
     const modelId = this.modelForFeatureKind(featureKind);
-    return modelId ? { ...cond, modelId } : cond;
+    if (!modelId) {
+      return cond;
+    }
+    // Chat has a user-facing model picker, so an explicit selection must win:
+    // the configured scenario model acts as the default, applied only when the
+    // request carries no model of its own. Non-chat scenarios (image /
+    // embedding / rerank / transcript) have no picker, so the override stays a
+    // hard force.
+    const scenario = featureKind
+      ? FEATURE_KIND_TO_SCENARIO[featureKind]
+      : undefined;
+    if (scenario === 'chat' && cond.modelId) {
+      return cond;
+    }
+    return { ...cond, modelId };
   }
 
   warnUnknownModels(known: Set<string>): string[] {
