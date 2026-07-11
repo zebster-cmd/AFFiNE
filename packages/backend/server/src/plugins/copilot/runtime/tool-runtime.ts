@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { Config } from '../../../base';
-import { DocReader, DocWriter } from '../../../core/doc';
+import { DatabaseWriter, DocReader, DocWriter } from '../../../core/doc';
 import { PermissionAccess } from '../../../core/permission';
 import { Models } from '../../../models';
 import { IndexerService } from '../../indexer';
@@ -13,6 +13,9 @@ import {
 } from '../providers/types';
 import {
   buildBlobContentGetter,
+  buildDatabaseCreateHandler,
+  buildDatabaseReadHandler,
+  buildDatabaseUpdateHandler,
   buildDocContentGetter,
   buildDocCreateHandler,
   buildDocKeywordSearchGetter,
@@ -24,6 +27,9 @@ import {
   createBlobReadTool,
   createCodeArtifactTool,
   createConversationSummaryTool,
+  createDatabaseCreateTool,
+  createDatabaseReadTool,
+  createDatabaseUpdateTool,
   createDocComposeTool,
   createDocCreateTool,
   createDocKeywordSearchTool,
@@ -54,7 +60,8 @@ export class ToolRuntime {
     private readonly docWriter: DocWriter,
     private readonly models: Models,
     private readonly promptRuntime: PromptRuntime,
-    private readonly indexerService: IndexerService
+    private readonly indexerService: IndexerService,
+    private readonly databaseWriter: DatabaseWriter
   ) {}
 
   async getTools(
@@ -93,7 +100,13 @@ export class ToolRuntime {
 
       if (
         !(env.dev || env.namespaces.canary) &&
-        ['docCreate', 'docUpdate', 'docUpdateMeta'].includes(tool)
+        [
+          'docCreate',
+          'docUpdate',
+          'docUpdateMeta',
+          'databaseCreate',
+          'databaseUpdate',
+        ].includes(tool)
       ) {
         continue;
       }
@@ -171,6 +184,33 @@ export class ToolRuntime {
           );
           tools.doc_update_meta = createDocUpdateMetaTool(
             updateDocMeta.bind(null, options)
+          );
+          break;
+        }
+        case 'databaseRead': {
+          const getBoard = buildDatabaseReadHandler(this.ac, this.docReader);
+          tools.database_read = createDatabaseReadTool(
+            getBoard.bind(null, options)
+          );
+          break;
+        }
+        case 'databaseCreate': {
+          const createBoard = buildDatabaseCreateHandler(
+            this.ac,
+            this.databaseWriter
+          );
+          tools.database_create = createDatabaseCreateTool(
+            createBoard.bind(null, options)
+          );
+          break;
+        }
+        case 'databaseUpdate': {
+          const applyOps = buildDatabaseUpdateHandler(
+            this.ac,
+            this.databaseWriter
+          );
+          tools.database_update = createDatabaseUpdateTool(
+            applyOps.bind(null, options)
           );
           break;
         }

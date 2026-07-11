@@ -722,7 +722,10 @@
         "webSearch",
         "docCompose",
         "codeArtifact",
-        "blobRead"
+        "blobRead",
+        "databaseRead",
+        "databaseCreate",
+        "databaseUpdate"
       ],
       "proModels": ["gemini-2.5-pro", "gemini-3.5-flash", "claude-sonnet-4-6"]
     },

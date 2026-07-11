@@ -93,6 +93,10 @@ export const PromptToolsSchema = z
     'docCompose',
     // section editing
     'sectionEdit',
+    // work with database/kanban blocks
+    'databaseRead',
+    'databaseCreate',
+    'databaseUpdate',
   ])
   .array();
 
