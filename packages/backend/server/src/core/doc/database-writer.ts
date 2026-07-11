@@ -50,6 +50,43 @@ interface StoredView {
   [key: string]: unknown;
 }
 
+/** One column of a {@link CreateBoardSpec} passed to {@link DatabaseWriter.createBoard}. */
+export interface CreateBoardColumnSpec {
+  name: string;
+  type: PropertyType;
+  options?: { value: string; color?: string }[];
+}
+
+/**
+ * The view a new board is created with. `groupByColumnName` (kanban only)
+ * names an existing (or about-to-be-created) `spec.columns` entry by its
+ * `name`, since the caller cannot know column ids that {@link DatabaseWriter}
+ * generates during `createBoard` - mirrors the `database_create` tool's
+ * `{ [columnName]: value }` cell convention (see the design doc).
+ */
+export interface CreateBoardViewSpec {
+  mode: 'table' | 'kanban';
+  name?: string;
+  groupByColumnName?: string;
+}
+
+/**
+ * One initial row of a {@link CreateBoardSpec}. `cells` is keyed by column
+ * *name* (not id), for the same reason as `CreateBoardViewSpec.groupByColumnName`.
+ */
+export interface CreateBoardRowSpec {
+  title?: string;
+  cells?: Record<string, unknown>;
+}
+
+/** Input to {@link DatabaseWriter.createBoard}. */
+export interface CreateBoardSpec {
+  title: string;
+  columns: CreateBoardColumnSpec[];
+  view: CreateBoardViewSpec;
+  rows?: CreateBoardRowSpec[];
+}
+
 /**
  * Default group column seeded by {@link DatabaseWriter.ensureGroupColumn}
  * when a kanban view is created without an explicit `groupByColumnId`,
@@ -178,6 +215,175 @@ export class DatabaseWriter {
       }
     });
 
+    await this.pushDelta(workspaceId, docId, delta, editorId);
+
+    this.logger.debug(
+      `Applied ${ops.length} database op(s) to block ${blockId} in doc ${docId}`
+    );
+  }
+
+  /**
+   * Loads `docId`'s current binary, finds its (first) `affine:note` block,
+   * and appends a brand-new `affine:database` block to it: a `title` column
+   * is always ensured, then `spec.columns`/`spec.view`/`spec.rows` are built
+   * via the exact same op mutators `applyOps` uses (`addColumn`/`addView`/
+   * `addRow`), all inside one `doc.transact`. Pushes only the resulting
+   * delta, mirroring `applyOps`'s load / transact / encode-delta / push
+   * shape.
+   */
+  async createBoard(
+    workspaceId: string,
+    docId: string,
+    spec: CreateBoardSpec,
+    editorId?: string
+  ): Promise<{ blockId: string }> {
+    const rec = await this.storage.getDoc(workspaceId, docId);
+    if (!rec?.bin) {
+      throw new NotFoundException(`Document ${docId} not found`);
+    }
+
+    const bin = Buffer.isBuffer(rec.bin)
+      ? rec.bin
+      : Buffer.from(rec.bin.buffer, rec.bin.byteOffset, rec.bin.byteLength);
+
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, bin);
+    const before = Y.encodeStateVector(doc);
+
+    const blocks = doc.getMap('blocks');
+    const noteId = this.findNoteBlockId(blocks);
+    if (!noteId) {
+      throw new NotFoundException(
+        'Document has no note block to hold the database'
+      );
+    }
+
+    const blockId = nanoid();
+
+    doc.transact(() => {
+      const note = blocks.get(noteId) as Y.Map<unknown>;
+
+      const db = new Y.Map<unknown>();
+      db.set('sys:id', blockId);
+      db.set('sys:flavour', 'affine:database');
+      db.set('sys:version', 3);
+      db.set('sys:children', new Y.Array<string>());
+      db.set('prop:title', new Y.Text(spec.title));
+
+      const columns = new Y.Array<StoredColumn>();
+      db.set('prop:columns', columns);
+      const cells = new Y.Map<unknown>();
+      db.set('prop:cells', cells);
+      const views = new Y.Array<unknown>();
+      db.set('prop:views', views);
+
+      // Y.Map.set is tracked incrementally by Yjs - see applyToBinary's
+      // caveat doc below for why fresh inserts (unlike in-place mutation of
+      // an object already inside a Y.Array) are always safe here.
+      blocks.set(blockId, db);
+
+      const noteChildren = note.get('sys:children') as Y.Array<string>;
+      noteChildren.push([blockId]);
+
+      const ctx: BoardCtx = { doc, blocks, db, columns, cells, views };
+
+      const hasTitleColumn = spec.columns.some(
+        column => column.type === 'title'
+      );
+      if (!hasTitleColumn) {
+        this.addColumn(ctx, { op: 'add_column', name: 'Title', type: 'title' });
+      }
+      for (const column of spec.columns) {
+        this.addColumn(ctx, {
+          op: 'add_column',
+          name: column.name,
+          type: column.type,
+          options: column.options,
+        });
+      }
+
+      const groupByColumnId =
+        spec.view.mode === 'kanban'
+          ? this.resolveColumnIdByName(ctx, spec.view.groupByColumnName)
+          : undefined;
+      this.addView(ctx, {
+        op: 'add_view',
+        mode: spec.view.mode,
+        name: spec.view.name,
+        groupByColumnId,
+      });
+
+      for (const row of spec.rows ?? []) {
+        this.addRow(ctx, {
+          op: 'add_row',
+          title: row.title,
+          cells: this.resolveCellsByColumnName(ctx, row.cells),
+        });
+      }
+    });
+
+    const delta = Y.encodeStateAsUpdate(doc, before);
+    await this.pushDelta(workspaceId, docId, delta, editorId);
+
+    this.logger.debug(
+      `Created database block ${blockId} in doc ${docId} (note ${noteId})`
+    );
+
+    return { blockId };
+  }
+
+  /** Finds the id of the first `affine:note` block, or `undefined` if none exists. */
+  private findNoteBlockId(blocks: Y.Map<unknown>): string | undefined {
+    for (const [id, block] of blocks.entries()) {
+      if ((block as Y.Map<unknown>).get('sys:flavour') === 'affine:note') {
+        return id;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Resolves `spec.rows[].cells`' column-*name* keys (see
+   * {@link CreateBoardRowSpec}) to column ids for `writeCell`/`addRow`,
+   * falling back to treating the key as an id verbatim (defensive - callers
+   * should use names). Unresolvable keys are passed through unchanged so
+   * `writeCell`'s own `NotFoundException` reports the bad column.
+   */
+  private resolveCellsByColumnName(
+    ctx: BoardCtx,
+    cells?: Record<string, unknown>
+  ): Record<string, unknown> | undefined {
+    if (!cells) {
+      return undefined;
+    }
+    const columns = ctx.columns.toArray();
+    const resolved: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(cells)) {
+      const column =
+        columns.find(c => c.name === key) ?? columns.find(c => c.id === key);
+      resolved[column?.id ?? key] = value;
+    }
+    return resolved;
+  }
+
+  /** Resolves a column *name* to its id, or `undefined` if no column has that name. */
+  private resolveColumnIdByName(
+    ctx: BoardCtx,
+    name?: string
+  ): string | undefined {
+    if (!name) {
+      return undefined;
+    }
+    return ctx.columns.toArray().find(column => column.name === name)?.id;
+  }
+
+  /** Pushes `delta` to storage and emits `doc.updates.pushed`, shared by `applyOps`/`createBoard`. */
+  private async pushDelta(
+    workspaceId: string,
+    docId: string,
+    delta: Uint8Array,
+    editorId?: string
+  ): Promise<void> {
     const timestamp = await this.storage.pushDocUpdates(
       workspaceId,
       docId,
@@ -191,10 +397,6 @@ export class DatabaseWriter {
       timestamp,
       editor: editorId,
     });
-
-    this.logger.debug(
-      `Applied ${ops.length} database op(s) to block ${blockId} in doc ${docId}`
-    );
   }
 
   /**
