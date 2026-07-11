@@ -75,12 +75,12 @@ export interface AddColumnOp {
   options?: { value: string; color?: string }[];
 }
 
-/** Rename and/or retype an existing column. */
+/** Rename an existing column and/or update its select options. */
 export interface UpdateColumnOp {
   op: 'update_column';
   columnId: string;
   name?: string;
-  type?: PropertyType;
+  options?: { id?: string; value: string; color?: string }[];
 }
 
 /** Remove a column and purge its cells from every row. */
@@ -92,7 +92,7 @@ export interface DeleteColumnOp {
 /** Append a new row (optionally seeding cell values, keyed by column id). */
 export interface AddRowOp {
   op: 'add_row';
-  title: string;
+  title?: string;
   cells?: Record<string, unknown>;
 }
 
@@ -113,17 +113,16 @@ export interface DeleteRowOp {
 /** Append a new view (table or kanban). Kanban views group by `groupByColumnId`. */
 export interface AddViewOp {
   op: 'add_view';
-  name: string;
   mode: string;
+  name?: string;
   groupByColumnId?: string;
 }
 
-/** Move a row into a (possibly new) kanban group within a view. */
+/** Move a row into a (possibly new) kanban group. */
 export interface MoveCardOp {
   op: 'move_card';
-  viewId: string;
   rowId: string;
-  groupValue: string;
+  toGroupValue: string;
 }
 
 /** The 8 mutation ops a `database_update` batch may contain. */
@@ -165,7 +164,15 @@ const UpdateColumnOpSchema = z.object({
   op: z.literal('update_column'),
   columnId: z.string(),
   name: z.string().optional(),
-  type: PropertyTypeSchema.optional(),
+  options: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        value: z.string(),
+        color: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 const DeleteColumnOpSchema = z.object({
@@ -175,7 +182,7 @@ const DeleteColumnOpSchema = z.object({
 
 const AddRowOpSchema = z.object({
   op: z.literal('add_row'),
-  title: z.string(),
+  title: z.string().optional(),
   cells: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -193,16 +200,15 @@ const DeleteRowOpSchema = z.object({
 
 const AddViewOpSchema = z.object({
   op: z.literal('add_view'),
-  name: z.string(),
   mode: z.string(),
+  name: z.string().optional(),
   groupByColumnId: z.string().optional(),
 });
 
 const MoveCardOpSchema = z.object({
   op: z.literal('move_card'),
-  viewId: z.string(),
   rowId: z.string(),
-  groupValue: z.string(),
+  toGroupValue: z.string(),
 });
 
 /** Zod schema for {@link DatabaseOp}, used by the `database_update` tool input. */
