@@ -195,6 +195,30 @@ test('applyOps update_cell on a read-only column throws', async t => {
   );
 });
 
+test('applyOps update_cell on a non-title column with a nonexistent rowId throws NotFoundException', async t => {
+  const bin = buildBoardDoc({
+    title: 'Board',
+    columns: [
+      { id: 'c_title', name: 'Title', type: 'title' },
+      { id: 'c_notes', name: 'Notes', type: 'text' },
+    ],
+    rows: [{ rowId: 'r1', title: 'Row 1', cells: {} }],
+    views: [],
+  });
+
+  const { writer } = makeWriter(bin);
+  await t.throwsAsync(() =>
+    writer.applyOps('ws1', 'doc1', DEFAULT_DATABASE_BLOCK_ID, [
+      {
+        op: 'update_cell',
+        rowId: 'does-not-exist',
+        columnId: 'c_notes',
+        value: 'hello',
+      },
+    ])
+  );
+});
+
 test('applyOps delete_row removes the row, its block, and its cells', async t => {
   const bin = buildBoardDoc({
     title: 'Board',

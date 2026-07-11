@@ -301,6 +301,10 @@ export class DatabaseWriter {
     columnId: string,
     value: unknown
   ): void {
+    if (!ctx.blocks.has(rowId)) {
+      throw new NotFoundException(`Row "${rowId}" not found`);
+    }
+
     const idx = requireColumnIndex(ctx.columns, columnId);
     const column = ctx.columns.get(idx);
 
@@ -313,9 +317,13 @@ export class DatabaseWriter {
     const encoded = encodeCell(column, value, ctx.doc);
 
     // Re-persist the column element in case encodeCell auto-created a select/
-    // multi-select option - see this method's caveat doc above.
-    ctx.columns.delete(idx, 1);
-    ctx.columns.insert(idx, [column]);
+    // multi-select option - see this method's caveat doc above. Only
+    // select/multi-select can trigger that auto-create, so scalar column
+    // types skip this replace to keep their delta minimal.
+    if (column.type === 'select' || column.type === 'multi-select') {
+      ctx.columns.delete(idx, 1);
+      ctx.columns.insert(idx, [column]);
+    }
 
     let rowCells = ctx.cells.get(rowId) as Y.Map<unknown> | undefined;
     if (!rowCells) {
