@@ -8,17 +8,59 @@ import {
   encodeCell,
   isReadOnlyType,
   type StoredColumn,
-  type StoredOption,
 } from './database-codec';
 import type {
   AddColumnOp,
   AddRowOp,
+  AddViewOp,
   DatabaseOp,
   DeleteColumnOp,
   DeleteRowOp,
+  MoveCardOp,
+  PropertyType,
   UpdateCellOp,
   UpdateColumnOp,
 } from './database-types';
+
+/**
+ * The nested `groupBy` descriptor a real BlockSuite kanban view stores
+ * (`GroupBy` in `blocksuite/affine/data-view/src/core/common/types.ts`),
+ * mirrored here for the writer side (see `database-reader.ts`'s
+ * `StoredGroupBy` for the read-side twin).
+ */
+interface StoredGroupBy {
+  type: string;
+  columnId: string;
+  name: string;
+}
+
+/** One entry of a kanban view's `groupProperties` (see database-reader.ts). */
+interface StoredGroupProperty {
+  key: string;
+  manuallyCardSort?: string[];
+}
+
+/** The plain object shape written to each entry of `prop:views`. */
+interface StoredView {
+  id: string;
+  name: string;
+  mode: string;
+  groupBy?: StoredGroupBy;
+  groupProperties?: StoredGroupProperty[];
+  [key: string]: unknown;
+}
+
+/**
+ * Default group column seeded by {@link DatabaseWriter.ensureGroupColumn}
+ * when a kanban view is created without an explicit `groupByColumnId`,
+ * mirroring the editor's default "Status" select column.
+ */
+const DEFAULT_GROUP_COLUMN_NAME = 'Status';
+const DEFAULT_GROUP_COLUMN_OPTIONS: { value: string; color: string }[] = [
+  { value: 'Todo', color: 'grey' },
+  { value: 'In Progress', color: 'yellow' },
+  { value: 'Done', color: 'green' },
+];
 
 /**
  * Mutable view over a single `affine:database` block, handed to the op
@@ -58,9 +100,12 @@ function requireColumnIndex(
  * mirroring `DocWriter`'s load / transact / encode-delta / push shape
  * (`writer.ts:36-102`).
  *
- * Task 4 implements only the three column ops (`add_column`/
- * `update_column`/`delete_column`); row/kanban/create ops (Tasks 5-6) slot
- * into the `default: throw` branch of {@link applyOps}'s op switch.
+ * Implements all 8 `DatabaseOp` variants: the three column ops (Task 4:
+ * `add_column`/`update_column`/`delete_column`), the three row/cell ops
+ * (Task 5: `add_row`/`update_cell`/`delete_row`), and the two kanban ops
+ * (Task 6: `add_view`/`move_card`). {@link applyOps}'s op switch is now
+ * exhaustive; its `default` branch only guards against a future op being
+ * added to the `DatabaseOp` union without a matching case.
  */
 @Injectable()
 export class DatabaseWriter {
@@ -113,8 +158,22 @@ export class DatabaseWriter {
           case 'delete_row':
             this.deleteRow(ctx, op);
             break;
-          default:
-            throw new Error(`Database op "${op.op}" is not yet implemented`);
+          case 'add_view':
+            this.addView(ctx, op);
+            break;
+          case 'move_card':
+            this.moveCard(ctx, op);
+            break;
+          default: {
+            // Exhaustive: all 8 DatabaseOp variants are handled above. This
+            // branch only fires if a future op is added to the union without
+            // a matching case - `op` is narrowed to `never`, so read `.op`
+            // off the pre-narrowing type for the error message.
+            const unknownOp = op as DatabaseOp;
+            throw new Error(
+              `Database op "${unknownOp.op}" is not yet implemented`
+            );
+          }
         }
       }
     });
@@ -179,20 +238,37 @@ export class DatabaseWriter {
   }
 
   private addColumn(ctx: BoardCtx, op: AddColumnOp): void {
-    const options: StoredOption[] = (op.options ?? []).map(option => ({
-      id: nanoid(),
-      value: option.value,
-      color: option.color,
-    }));
+    this.appendColumn(ctx, op.name, op.type, op.options ?? []);
+  }
+
+  /**
+   * Builds a new {@link StoredColumn} and pushes it onto `ctx.columns`.
+   * Shared by `addColumn` and {@link ensureGroupColumn} (the latter's default
+   * "Status" select column), per the task brief's "same column-append path
+   * as add_column".
+   */
+  private appendColumn(
+    ctx: BoardCtx,
+    name: string,
+    type: PropertyType,
+    options: { value: string; color?: string }[]
+  ): StoredColumn {
     const column: StoredColumn = {
       id: nanoid(),
-      type: op.type,
-      name: op.name,
-      data: { options },
+      type,
+      name,
+      data: {
+        options: options.map(option => ({
+          id: nanoid(),
+          value: option.value,
+          color: option.color,
+        })),
+      },
     };
     // A Y.Array insert - tracked incrementally by Yjs (unlike mutating an
     // element already in the array, see the applyToBinary caveat above).
     ctx.columns.push([column]);
+    return column;
   }
 
   private updateColumn(ctx: BoardCtx, op: UpdateColumnOp): void {
@@ -281,6 +357,123 @@ export class DatabaseWriter {
     dbChildren.delete(idx, 1);
     ctx.blocks.delete(op.rowId);
     ctx.cells.delete(op.rowId);
+  }
+
+  /**
+   * Appends a new view (`prop:views` entry). For `mode === 'kanban'`, ensures
+   * a group column (via {@link ensureGroupColumn}) and initializes the
+   * nested `groupBy` descriptor + empty `groupProperties`, mirroring real
+   * BlockSuite kanban views (`blocksuite/affine/data-view/src/view-presets/kanban/define.ts`).
+   *
+   * This is a fresh element being pushed, not a mutation of an existing one,
+   * so a plain `push` is tracked incrementally by Yjs - unlike `moveCard`
+   * below, which must replace an existing view element.
+   */
+  private addView(ctx: BoardCtx, op: AddViewOp): void {
+    const view: StoredView = {
+      id: nanoid(),
+      name: op.name ?? this.defaultViewName(op.mode),
+      mode: op.mode,
+    };
+
+    if (op.mode === 'kanban') {
+      const { columnId, columnName } = this.ensureGroupColumn(
+        ctx,
+        op.groupByColumnId
+      );
+      view.groupBy = { type: 'groupBy', columnId, name: columnName };
+      view.groupProperties = [];
+    }
+
+    ctx.views.push([view]);
+  }
+
+  private defaultViewName(mode: string): string {
+    return `${mode.charAt(0).toUpperCase()}${mode.slice(1)} View`;
+  }
+
+  /**
+   * Resolves the group column for a new kanban view: reuses
+   * `groupByColumnId` when it names an existing `select` column, otherwise
+   * creates a default "Status" select column (`Todo`/`In Progress`/`Done`)
+   * via {@link appendColumn}, mirroring the editor's default.
+   */
+  private ensureGroupColumn(
+    ctx: BoardCtx,
+    groupByColumnId?: string
+  ): { columnId: string; columnName: string } {
+    if (groupByColumnId) {
+      const idx = findColumnIndex(ctx.columns, groupByColumnId);
+      if (idx !== -1) {
+        const existing = ctx.columns.get(idx);
+        if (existing.type === 'select') {
+          return { columnId: existing.id, columnName: existing.name };
+        }
+      }
+    }
+
+    const column = this.appendColumn(
+      ctx,
+      DEFAULT_GROUP_COLUMN_NAME,
+      'select',
+      DEFAULT_GROUP_COLUMN_OPTIONS
+    );
+    return { columnId: column.id, columnName: column.name };
+  }
+
+  /**
+   * Moves `op.rowId` into the kanban group for `op.toGroupValue`: writes the
+   * card's group-column cell (auto-creating the option if new, via
+   * {@link writeCell}), then updates the board's (first) kanban view's
+   * `groupProperties` so the row appears in the target group's
+   * `manuallyCardSort` and no other group's.
+   *
+   * CAVEAT: mutating `view` (a plain object already inside `ctx.views`, a
+   * `Y.Array`) in place is NOT observed by Yjs's state-vector delta - the
+   * same caveat proven for `prop:columns` in `applyToBinary`'s doc comment.
+   * The updated view MUST replace the array element (`delete` + `insert`),
+   * never be edited in place.
+   */
+  private moveCard(ctx: BoardCtx, op: MoveCardOp): void {
+    const views = ctx.views.toArray() as StoredView[];
+    const viewIndex = views.findIndex(view => view.mode === 'kanban');
+    if (viewIndex === -1) {
+      throw new NotFoundException('Board has no kanban view');
+    }
+    const view = views[viewIndex];
+    const groupColumnId = view.groupBy?.columnId;
+    if (!groupColumnId) {
+      throw new NotFoundException('Kanban view has no group column configured');
+    }
+
+    this.writeCell(ctx, op.rowId, groupColumnId, op.toGroupValue);
+
+    // Read back the value writeCell just stored (the select option id) so
+    // the group key matches exactly what the cell now holds, rather than
+    // re-deriving it (which could risk creating a second duplicate option).
+    const rowCells = ctx.cells.get(op.rowId) as Y.Map<unknown> | undefined;
+    const cell = rowCells?.get(groupColumnId) as Y.Map<unknown> | undefined;
+    const key = String(cell?.get('value'));
+
+    const groupProperties: StoredGroupProperty[] = (
+      view.groupProperties ?? []
+    ).map(property => ({
+      key: property.key,
+      manuallyCardSort: (property.manuallyCardSort ?? []).filter(
+        rowId => rowId !== op.rowId
+      ),
+    }));
+
+    let target = groupProperties.find(property => property.key === key);
+    if (!target) {
+      target = { key, manuallyCardSort: [] };
+      groupProperties.push(target);
+    }
+    (target.manuallyCardSort ??= []).push(op.rowId);
+
+    const updatedView: StoredView = { ...view, groupProperties };
+    ctx.views.delete(viewIndex, 1);
+    ctx.views.insert(viewIndex, [updatedView]);
   }
 
   /**
