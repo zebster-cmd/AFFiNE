@@ -144,7 +144,10 @@ test('createBoard appends a new database block under the note with columns/rows/
   t.is(row1?.cells[assigneeColumn!.id], 'Alice');
   t.is(row1?.cells[priorityColumn!.id], 'High');
   const row2 = board.rows.find(r => r.title === 'Row 2');
-  t.is(row2?.cells[assigneeColumn!.id], '');
+  // row2 was created with only its Assignee cell set...
+  t.is(row2?.cells[assigneeColumn!.id], 'Bob');
+  // ...so its unset Priority (select) cell decodes to null.
+  t.is(row2?.cells[priorityColumn!.id], null);
 
   t.is(board.views.length, 1);
   const view = board.views[0];
