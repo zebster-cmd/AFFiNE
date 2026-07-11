@@ -86,6 +86,16 @@ test('checkbox encodeCell coerces truthy/falsy values to boolean', t => {
   t.is(decodeCell(col, false), false);
 });
 
+test('checkbox encodeCell parses boolean-like strings instead of trusting truthiness', t => {
+  const col = column({ type: 'checkbox' });
+  const ydoc = new Y.Doc();
+
+  // The bare `Boolean('false')` is `true`; the codec must special-case these.
+  t.is(encodeCell(col, 'false', ydoc), false);
+  t.is(encodeCell(col, 'true', ydoc), true);
+  t.is(encodeCell(col, '0', ydoc), false);
+});
+
 test('date encodeCell/decodeCell accept epoch-ms numbers', t => {
   const col = column({ type: 'date' });
   const ydoc = new Y.Doc();
@@ -160,6 +170,14 @@ test('updated-time encodeCell throws CodecError', t => {
   });
 });
 
+test('decodeCell on a read-only column returns the stored value unchanged', t => {
+  const col = column({ type: 'created-time' });
+  const epochMs = 1_700_000_000_000;
+
+  // Read-only types only reject on encode; decode is an identity pass-through.
+  t.is(decodeCell(col, epochMs), epochMs);
+});
+
 test('isReadOnlyType reports title/created-time/updated-time as read-only', t => {
   t.true(isReadOnlyType('title'));
   t.true(isReadOnlyType('created-time'));
@@ -176,6 +194,16 @@ test('select decodeCell reverses encodeCell back to the option label', t => {
   const id = encodeCell(col, 'In Progress', ydoc);
 
   t.is(decodeCell(col, id), 'In Progress');
+});
+
+test('select decodeCell returns the raw id when the option is not found', t => {
+  const col = column({
+    type: 'select',
+    data: { options: [{ id: 'o_todo', value: 'Todo' }] },
+  });
+
+  // Documents the defensive fallback: an unknown/stale id decodes to itself.
+  t.is(decodeCell(col, 'o_missing'), 'o_missing');
 });
 
 test('multi-select decodeCell reverses encodeCell back to option labels', t => {

@@ -116,7 +116,7 @@ function readOnlyCodec(type: PropertyType): Codec {
         type
       );
     },
-    decode: stored => stored,
+    decode: (_column, stored) => stored,
   };
 }
 
@@ -149,7 +149,18 @@ const numberCodec: Codec = {
 };
 
 const checkboxCodec: Codec = {
-  encode: (_column, modelValue) => Boolean(modelValue),
+  encode: (_column, modelValue) => {
+    if (typeof modelValue === 'string') {
+      const s = modelValue.trim().toLowerCase();
+      if (s === 'false' || s === '0' || s === 'no' || s === '') {
+        return false;
+      }
+      if (s === 'true' || s === '1' || s === 'yes') {
+        return true;
+      }
+    }
+    return Boolean(modelValue);
+  },
   decode: (_column, stored) => Boolean(stored),
 };
 
