@@ -64,10 +64,25 @@ export const buildDocContentGetter = (
       return documentSyncPendingError(docId);
     }
 
+    // The markdown projection silently drops blocks it can't render as text
+    // (database/kanban, edgeless, latex, etc.). Surface them so the model does
+    // not treat the document as empty of that content. Each entry is
+    // "blockId:flavour".
+    const omittedBlocks = [
+      ...content.knownUnsupportedBlocks,
+      ...content.unknownBlocks,
+    ];
+
     return {
       docId,
       title: content.title,
       markdown: content.markdown,
+      ...(omittedBlocks.length > 0
+        ? {
+            omittedBlocks,
+            omittedBlocksNote: `${omittedBlocks.length} block(s) in this document could not be represented as text and are omitted from "markdown" (for example database/kanban, edgeless, or other rich blocks). Do not assume this content does not exist; if the user asks about it, explain it cannot be read or edited through the document tools yet.`,
+          }
+        : {}),
       createdAt: docMeta.createdAt,
       updatedAt: docMeta.updatedAt,
       createdByUser: docMeta.createdByUser,

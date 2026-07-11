@@ -14,6 +14,25 @@ const stripLeadingH1 = (content: string) =>
 
 const sanitizeTitle = (title: string) => title.replace(/[\r\n]+/g, ' ').trim();
 
+// The markdown<->doc engine rejects a whole document when it hits a block
+// flavour (or nested children) it cannot round-trip — most notably
+// `affine:database` (tables/kanban). Turn its terse error into a message the
+// model can act on, instead of surfacing the raw "unsupported block flavour"
+// string.
+const describeWriteError = (message: string): string => {
+  const flavour = message.match(
+    /unsupported block flavour:\s*([^\s"']+)/i
+  )?.[1];
+  if (flavour) {
+    const name = flavour.replace(/^affine:/, '');
+    return `This document contains a "${name}" block that this tool cannot edit yet (database/kanban blocks and some rich blocks are unsupported), so the whole update was rejected. Ask the user to edit that block manually, or work in a document without one. (underlying: ${message})`;
+  }
+  if (/unsupported children on block/i.test(message)) {
+    return `This document contains a block with nested rows/children this tool cannot edit yet (most commonly a database/kanban block), so the whole update was rejected. (underlying: ${message})`;
+  }
+  return message;
+};
+
 export const buildDocCreateHandler = (
   ac: PermissionAccess,
   writer: DocWriter
@@ -143,7 +162,7 @@ export const createDocCreateTool = (
 ) => {
   return defineTool({
     description:
-      'Create a new document in the workspace with the given title and markdown content. Returns the ID of the created document. This tool not support insert or update database block and image yet.',
+      'Create a new document in the workspace with the given title and markdown content. Returns the ID of the created document. Supported blocks: headings, paragraphs, lists, quotes, code blocks, dividers, callouts, bookmarks/embeds, and GitHub-style pipe tables (which become lightweight table blocks). NOT supported: database/kanban blocks and images — do not attempt to create them.',
     inputSchema: z.object({
       title: z.string().min(1).describe('The title of the new document'),
       content: z
@@ -155,7 +174,7 @@ export const createDocCreateTool = (
         return await createDoc(title, content);
       } catch (err: any) {
         logger.error(`Failed to create document: ${title}`, err);
-        return toolError('Doc Create Failed', err.message);
+        return toolError('Doc Create Failed', describeWriteError(err.message));
       }
     },
   });
@@ -166,7 +185,7 @@ export const createDocUpdateTool = (
 ) => {
   return defineTool({
     description:
-      'Update an existing document with new markdown content (body only). Uses structural diffing to apply minimal changes. This does NOT update the document title. This tool not support insert or update database block and image yet.',
+      'Update an existing document body from new markdown content (body only). Uses structural diffing to apply minimal changes. Does NOT update the document title. Supported blocks are the same as document creation, including GitHub-style pipe tables. NOT supported: database/kanban blocks and images. Important: a document that already CONTAINS a database/kanban block cannot be updated at all — the update will be rejected — so avoid calling this on such documents.',
     inputSchema: z.object({
       doc_id: z.string().describe('The ID of the document to update'),
       content: z
@@ -180,7 +199,7 @@ export const createDocUpdateTool = (
         return await updateDoc(doc_id, content);
       } catch (err: any) {
         logger.error(`Failed to update document: ${doc_id}`, err);
-        return toolError('Doc Update Failed', err.message);
+        return toolError('Doc Update Failed', describeWriteError(err.message));
       }
     },
   });
