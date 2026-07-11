@@ -12,9 +12,19 @@ fn to_contract_variant(variant: &llm_adapter::core::ModelRegistryVariant) -> Res
 }
 
 fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> {
+  // `protocol` + `requestLayer` are REQUIRED: the TS route resolver
+  // (resolveProviderModelRoute) throws "Missing native protocol for model X"
+  // when `variant.protocol` is null. "openai_chat" is accepted by every
+  // protocol parser in llm_adapter (chat / structured / embedding / rerank —
+  // see backend/types.rs), so a single value covers all output types these
+  // OpenAI-compatible Requesty models expose. "chat_completions" routes to
+  // `{baseURL}/chat/completions` (and `/embeddings` for embedding requests),
+  // matching Requesty's OpenAI-compatible gateway.
   let defs = serde_json::json!([
     {
       "backendKind": "openai_chat",
+      "protocol": "openai_chat",
+      "requestLayer": "chat_completions",
       "canonicalKey": "sference/glm-5.2",
       "rawModelId": "sference/glm-5.2",
       "displayName": "Requesty GLM 5.2",
@@ -25,6 +35,8 @@ fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> 
     },
     {
       "backendKind": "openai_chat",
+      "protocol": "openai_chat",
+      "requestLayer": "chat_completions",
       "canonicalKey": "nebius/Qwen/Qwen3-Embedding-8B",
       "rawModelId": "nebius/Qwen/Qwen3-Embedding-8B",
       "displayName": "Requesty Qwen3 Embedding 8B",
@@ -35,6 +47,8 @@ fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> 
     },
     {
       "backendKind": "openai_chat",
+      "protocol": "openai_chat",
+      "requestLayer": "chat_completions",
       "canonicalKey": "nebius/qwen/qwen3-32b",
       "rawModelId": "nebius/qwen/qwen3-32b",
       "displayName": "Requesty Qwen3 32B (reranker)",
@@ -45,6 +59,8 @@ fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> 
     },
     {
       "backendKind": "openai_chat",
+      "protocol": "openai_chat",
+      "requestLayer": "chat_completions",
       "canonicalKey": "mistral/voxtral-mini-latest",
       "rawModelId": "mistral/voxtral-mini-latest",
       "displayName": "Requesty Voxtral Mini (transcription)",
@@ -278,6 +294,21 @@ mod tests {
     let hit =
       llm_adapter::core::resolve_model_registry_variant(&variants, Some("openai_chat"), "sference/glm-5.2").unwrap();
     assert!(hit.is_some());
+  }
+
+  #[test]
+  fn requesty_variants_carry_a_native_protocol() {
+    // Regression: a variant with `protocol: None` makes the TS route resolver
+    // throw "Missing native protocol for model X". Every Requesty variant must
+    // declare one.
+    for variant in super::requesty_registry_variants_for_test() {
+      assert_eq!(
+        variant.protocol.as_deref(),
+        Some("openai_chat"),
+        "variant {} is missing its native protocol",
+        variant.raw_model_id
+      );
+    }
   }
 
   #[test]
