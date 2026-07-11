@@ -44,4 +44,9 @@ export {
   PgWorkspaceDocStorageAdapter,
 };
 
+export {
+  DatabaseReader,
+  listBoardsFromBinary,
+  readBoardFromBinary,
+} from './database-reader';
 export { DocStorageAdapter, type Editor } from './storage';
