@@ -369,6 +369,15 @@ const imageArtifactSpec: PreparedExecutionArtifactSpec<
   mapPreparedRoute: mapPreparedDispatchRoute,
 };
 
+// cond.modelSource is host-side routing intent, consumed during route
+// resolution (scenario overrides in CopilotProviderFactory.resolveRoutes).
+// The native execution-plan contract (ModelConditionsContract) denies unknown
+// fields, so it must not leak into the plan request cond.
+function toPlanCond(cond: ModelConditions): ModelConditions {
+  const { modelSource: _modelSource, ...planCond } = cond;
+  return planCond;
+}
+
 function buildFallbackOrder(routes: ResolvedCopilotProvider[]) {
   return routes.map(route => route.providerId);
 }
@@ -598,7 +607,7 @@ export class ExecutionPlanBuilder {
       transport,
       request: {
         kind,
-        cond: { ...cond, modelId: cond.modelId },
+        cond: { ...toPlanCond(cond), modelId: cond.modelId },
         messages,
         options,
       } as Extract<ExecutionPlanRequest, { kind: TKind }>,
@@ -688,7 +697,7 @@ export class ExecutionPlanBuilder {
       transport,
       request: {
         kind: 'structured',
-        cond: { ...cond, modelId: cond.modelId },
+        cond: { ...toPlanCond(cond), modelId: cond.modelId },
         messages,
         options,
       },

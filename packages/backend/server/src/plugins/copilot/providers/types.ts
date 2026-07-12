@@ -387,6 +387,16 @@ export interface CopilotProviderModel {
 
 export type { CopilotModelBackendKind };
 
-export type ModelConditions = Omit<ModelConditionsContract, 'outputType'>;
+// Marks where cond.modelId came from. Constraint: prompt-baked default models
+// ('promptDefault') are overridable by scenario config (copilot
+// scenarioOverrides); user-requested models ('user') are not. Host-side
+// routing intent only — it must be stripped before cond crosses into the
+// native execution-plan contract (ModelConditionsContract denies unknown
+// fields).
+export type ModelSource = 'user' | 'promptDefault';
 
-export type ModelFullConditions = ModelConditionsContract;
+export type ModelFullConditions = ModelConditionsContract & {
+  modelSource?: ModelSource;
+};
+
+export type ModelConditions = Omit<ModelFullConditions, 'outputType'>;

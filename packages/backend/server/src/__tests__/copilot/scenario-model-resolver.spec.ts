@@ -45,6 +45,38 @@ test('chat honors an explicit model selection (picker wins over the default)', t
   t.is(out.modelId, 'requesty/openai/gpt-4o');
 });
 
+test('chat reroutes a prompt-baked default model to the scenario override', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'gemini-2.5-pro', modelSource: 'promptDefault' },
+    'chat'
+  );
+  t.is(out.modelId, 'requesty/sference/glm-5.2');
+});
+
+test('chat keeps a user-requested model even when an override is configured', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'requesty/openai/gpt-4o', modelSource: 'user' },
+    'chat'
+  );
+  t.is(out.modelId, 'requesty/openai/gpt-4o');
+});
+
+test('chat treats an unmarked explicit model as user-selected (back-compat)', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'requesty/openai/gpt-4o' },
+    'chat'
+  );
+  t.is(out.modelId, 'requesty/openai/gpt-4o');
+});
+
+test('non-chat scenarios force the override regardless of modelSource', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'requesty/openai/gpt-4o', modelSource: 'user' },
+    'embedding'
+  );
+  t.is(out.modelId, 'requesty/nebius/Qwen/Qwen3-Embedding-8B');
+});
+
 test('non-chat scenarios still force over a pre-set model', t => {
   const out = resolver(ENABLED).resolve(
     { modelId: 'requesty/openai/gpt-4o' },

@@ -6,6 +6,7 @@ import {
   type CopilotChatOptions,
   type CopilotProviderType,
   type CopilotStructuredOptions,
+  type ModelSource,
   type PromptMessage,
   type PromptParams,
 } from '../providers/types';
@@ -42,13 +43,22 @@ export class PromptRuntime {
       throw new CopilotPromptNotFound({ name: promptName });
     }
 
-    return {
-      prompt,
-      modelId: await this.capabilityPolicy.resolvePromptModel({
+    const { selectedModel, matchedOptionalModel } =
+      await this.capabilityPolicy.resolvePromptModel({
         defaultModel: prompt.model,
         optionalModels: prompt.optionalModels,
         requestedModelId: options.modelId,
-      }),
+      });
+
+    return {
+      prompt,
+      modelId: selectedModel,
+      // A caller-supplied modelId is user intent only if it actually matched;
+      // otherwise the prompt's baked default is in effect, which scenario
+      // overrides may reroute.
+      modelSource: (options.modelId && matchedOptionalModel
+        ? 'user'
+        : 'promptDefault') as ModelSource,
       finalMessages: [
         ...this.prompts.finish(prompt, params),
         ...(options.appendMessages ?? []),
@@ -70,7 +80,7 @@ export class PromptRuntime {
     const prepared = await this.preparePrompt(promptName, params, options);
 
     return await this.runtime.text(
-      { modelId: prepared.modelId },
+      { modelId: prepared.modelId, modelSource: prepared.modelSource },
       prepared.finalMessages,
       {
         ...prepared.prompt.config,
@@ -95,7 +105,7 @@ export class PromptRuntime {
     const prepared = await this.preparePrompt(promptName, params, options);
 
     return await this.runtime.generateStructuredValue(
-      { modelId: prepared.modelId },
+      { modelId: prepared.modelId, modelSource: prepared.modelSource },
       prepared.finalMessages,
       {
         ...prepared.prompt.config,

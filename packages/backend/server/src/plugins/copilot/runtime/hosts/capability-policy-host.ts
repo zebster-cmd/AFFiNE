@@ -115,7 +115,7 @@ export class CapabilityPolicyHost {
   }
 
   async resolvePromptModel(input: ResolveModelInput) {
-    return this.modelSelection.resolveRequestedModel(input).selectedModel;
+    return this.modelSelection.resolveRequestedModel(input);
   }
 
   async resolveFixedTaskModel(input: ResolveModelInput) {

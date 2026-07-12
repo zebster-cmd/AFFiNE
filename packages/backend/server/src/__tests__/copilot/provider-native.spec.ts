@@ -2471,6 +2471,52 @@ test('ExecutionPlanBuilder should keep single-route tool chat plans on prepared_
   t.snapshot(plan.transport);
 });
 
+test('ExecutionPlanBuilder should thread modelSource to route resolution but strip it from the plan cond', async t => {
+  const provider = new TestOpenAIProvider();
+  const providers = {
+    prepareRoutes: Sinon.stub().resolves([
+      {
+        providerId: 'openai-primary',
+        provider,
+        execution: { providerId: 'openai-primary', profile: {} as any },
+        profile: {} as any,
+        modelId: 'gpt-5-mini',
+        prepared: {
+          route: preparedRoute({
+            providerId: 'openai-primary',
+            authToken: 'primary-key',
+          }),
+          request: nativeTextRequest('hello'),
+          tools: {},
+          maxSteps: 1,
+          postprocess: {
+            nodeTextMiddleware: [],
+          },
+        },
+      },
+    ]),
+  };
+  const metrics = { recordPlan: Sinon.stub() };
+  const builder = new ExecutionPlanBuilder(
+    providers as never,
+    metrics as never
+  );
+
+  const plan = await builder.buildTextPlan(
+    { modelId: 'gpt-5-mini', modelSource: 'promptDefault' },
+    [userPrompt('hello')]
+  );
+
+  // modelSource must reach the provider factory: scenario overrides consume
+  // it in resolveRoutes to distinguish prompt-baked defaults from user picks.
+  t.is(providers.prepareRoutes.firstCall.args[1].modelSource, 'promptDefault');
+  // ...but must not leak into the plan request cond: the native
+  // execution-plan contract (ModelConditionsContract) denies unknown fields.
+  t.false('modelSource' in plan.request.cond);
+  t.truthy(plan.serializable);
+  t.false('modelSource' in plan.serializable!.request.cond);
+});
+
 test('NativeExecutionEngine should route tool-loop chat prepared routes through native dispatch', async t => {
   const engine = createNativeExecutionEngine();
   let capturedRoutes: unknown;

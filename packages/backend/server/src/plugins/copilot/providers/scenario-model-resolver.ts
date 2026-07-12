@@ -43,15 +43,24 @@ export class ScenarioModelResolver {
     if (!modelId) {
       return cond;
     }
-    // Chat has a user-facing model picker, so an explicit selection must win:
-    // the configured scenario model acts as the default, applied only when the
-    // request carries no model of its own. Non-chat scenarios (image /
-    // embedding / rerank / transcript) have no picker, so the override stays a
-    // hard force.
+    // Chat has a user-facing model picker, so a genuinely requested model must
+    // win. Three cases:
+    // 1. modelSource === 'user': an explicit picker/caller choice — keep it.
+    // 2. modelId set without modelSource: treated as explicit for back-compat
+    //    with callers that predate the marker — keep it.
+    // 3. modelSource === 'promptDefault': the model is only a prompt-baked
+    //    default (built-in prompts pin AFFiNE Cloud models), so reroute it to
+    //    the configured scenario model.
+    // Non-chat scenarios (image / embedding / rerank / transcript) have no
+    // picker, so the override stays a hard force.
     const scenario = featureKind
       ? FEATURE_KIND_TO_SCENARIO[featureKind]
       : undefined;
-    if (scenario === 'chat' && cond.modelId) {
+    if (
+      scenario === 'chat' &&
+      cond.modelId &&
+      cond.modelSource !== 'promptDefault'
+    ) {
       return cond;
     }
     return { ...cond, modelId };
