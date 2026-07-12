@@ -204,6 +204,10 @@ declare global {
       exa: ConfigItem<{
         key: string;
       }>;
+      tavily: ConfigItem<{
+        key: string;
+      }>;
+      webSearchProvider: ConfigItem<'exa' | 'tavily'>;
       storage: ConfigItem<StorageProviderConfig>;
       scenarioOverrides: ConfigItem<{
         enabled: boolean;
@@ -323,6 +327,17 @@ defineModuleConfig('copilot', {
     default: {
       key: '',
     },
+  },
+  tavily: {
+    desc: 'The config for the tavily web tools key.',
+    default: {
+      key: '',
+    },
+  },
+  webSearchProvider: {
+    desc: 'Which provider backs the copilot webSearch tools (exa or tavily).',
+    default: 'exa',
+    shape: z.enum(['exa', 'tavily']),
   },
   storage: {
     desc: 'The config for the storage provider.',

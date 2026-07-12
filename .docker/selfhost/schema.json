@@ -1229,6 +1229,14 @@
           },
           "default": {}
         },
+        "providers.requesty": {
+          "type": "object",
+          "description": "The config for the Requesty gateway provider (OpenAI-compatible).\n@default {\"apiKey\":\"\",\"baseURL\":\"https://router.requesty.ai/v1\"}",
+          "default": {
+            "apiKey": "",
+            "baseURL": "https://router.requesty.ai/v1"
+          }
+        },
         "unsplash": {
           "type": "object",
           "description": "The config for the unsplash key.\n@default {\"key\":\"\"}",
@@ -1242,6 +1250,18 @@
           "default": {
             "key": ""
           }
+        },
+        "tavily": {
+          "type": "object",
+          "description": "The config for the tavily web tools key.\n@default {\"key\":\"\"}",
+          "default": {
+            "key": ""
+          }
+        },
+        "webSearchProvider": {
+          "type": "string",
+          "description": "Which provider backs the copilot webSearch tools (exa or tavily).\n@default \"exa\"",
+          "default": "exa"
         },
         "storage": {
           "type": "object",
@@ -1470,6 +1490,14 @@
             "config": {
               "path": "~/.affine/storage"
             }
+          }
+        },
+        "scenarioOverrides": {
+          "type": "object",
+          "description": "Override which model backs each AI scenario (routed via a provider such as Requesty).\n@default {\"enabled\":false,\"models\":{}}",
+          "default": {
+            "enabled": false,
+            "models": {}
           }
         }
       }

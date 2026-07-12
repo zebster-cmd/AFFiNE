@@ -382,6 +382,10 @@
       "type": "Object",
       "desc": "The config for the anthropic provider in Google Vertex AI."
     },
+    "providers.requesty": {
+      "type": "Object",
+      "desc": "The config for the Requesty gateway provider (OpenAI-compatible)."
+    },
     "unsplash": {
       "type": "Object",
       "desc": "The config for the unsplash key."
@@ -390,9 +394,21 @@
       "type": "Object",
       "desc": "The config for the exa web search key."
     },
+    "tavily": {
+      "type": "Object",
+      "desc": "The config for the tavily web tools key."
+    },
+    "webSearchProvider": {
+      "type": "String",
+      "desc": "Which provider backs the copilot webSearch tools (exa or tavily)."
+    },
     "storage": {
       "type": "Object",
       "desc": "The config for the storage provider."
+    },
+    "scenarioOverrides": {
+      "type": "Object",
+      "desc": "Override which model backs each AI scenario (routed via a provider such as Requesty)."
     }
   },
   "indexer": {

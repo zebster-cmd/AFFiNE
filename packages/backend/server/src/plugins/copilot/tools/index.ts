@@ -13,4 +13,8 @@ export * from './error';
 export * from './exa-crawl';
 export * from './exa-search';
 export * from './section-edit';
+export * from './tavily-crawl';
+export * from './tavily-extract';
+export * from './tavily-map';
+export * from './tavily-search';
 export * from './tool';

@@ -40,6 +40,10 @@ import {
   createExaCrawlTool,
   createExaSearchTool,
   createSectionEditTool,
+  createTavilyCrawlTool,
+  createTavilyExtractTool,
+  createTavilyMapTool,
+  createTavilySearchTool,
 } from '../tools';
 import { PromptRuntime } from './prompt-runtime';
 import type { ToolLoopBackend } from './tool/bridge';
@@ -215,8 +219,15 @@ export class ToolRuntime {
           break;
         }
         case 'webSearch': {
-          tools.web_search_exa = createExaSearchTool(this.config);
-          tools.web_crawl_exa = createExaCrawlTool(this.config);
+          if (this.config.copilot.webSearchProvider === 'tavily') {
+            tools.web_search_tavily = createTavilySearchTool(this.config);
+            tools.web_extract_tavily = createTavilyExtractTool(this.config);
+            tools.web_crawl_tavily = createTavilyCrawlTool(this.config);
+            tools.web_map_tavily = createTavilyMapTool(this.config);
+          } else {
+            tools.web_search_exa = createExaSearchTool(this.config);
+            tools.web_crawl_exa = createExaCrawlTool(this.config);
+          }
           break;
         }
         case 'docCompose': {
