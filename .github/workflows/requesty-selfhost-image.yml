@@ -105,8 +105,6 @@ jobs:
         targets:
           - name: x86_64-unknown-linux-gnu
             file: server-native.x64.node
-          - name: aarch64-unknown-linux-gnu
-            file: server-native.arm64.node
     steps:
       - uses: actions/checkout@v6
       - name: Setup Version
@@ -157,13 +155,14 @@ jobs:
       - name: List server-native files
         run: ls -alh ./packages/backend/native
       # native/index.js statically requires x64 + arm64 + armv7 .node files, so
-      # the rspack bundle must resolve all three. We build REAL x64 + arm64
-      # (matrix above); there is no armv7 image target, so stub only armv7 with a
-      # copy of x64 — it is never require()'d on amd64/arm64 hosts, just an inert
-      # asset that lets the bundle resolve.
-      - name: Stub armv7 native (no armv7 image target)
+      # the rspack bundle must resolve all three. Only x64 is a real build (the
+      # Coolify host is amd64); arm64 + armv7 are stubbed with a copy of x64 —
+      # never require()'d on an amd64 host, just inert assets that let the
+      # bundle resolve.
+      - name: Stub arm64 + armv7 natives (amd64-only image)
         run: |
           cd packages/backend/native
+          cp server-native.x64.node server-native.arm64.node
           cp server-native.x64.node server-native.armv7.node
       - name: Build Server
         run: yarn workspace @affine/server build
@@ -175,7 +174,7 @@ jobs:
           if-no-files-found: error
 
   build-image:
-    name: Build & Push Image (amd64+arm64)
+    name: Build & Push Image (amd64)
     runs-on: ubuntu-latest
     needs:
       - build-server
@@ -196,8 +195,6 @@ jobs:
           logout: false
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Setup Node.js
@@ -223,7 +220,7 @@ jobs:
           path: ./packages/frontend/admin/dist
       - name: Install Node.js dependencies (production)
         run: |
-          yarn config set --json supportedArchitectures.cpu '["x64", "arm64"]'
+          yarn config set --json supportedArchitectures.cpu '["x64"]'
           yarn config set --json supportedArchitectures.libc '["glibc"]'
           yarn workspaces focus @affine/server --production
         env:
@@ -242,7 +239,7 @@ jobs:
           context: .
           push: true
           pull: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           provenance: false
           file: .github/deployment/node/Dockerfile
           tags: ghcr.io/${{ github.repository_owner }}/affine:${{ inputs.image-tag || 'requesty' }}
