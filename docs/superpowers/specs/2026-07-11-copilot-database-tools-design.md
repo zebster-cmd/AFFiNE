@@ -77,7 +77,7 @@ Wiring (per the tool-add checklist established in the investigation):
 
 Input: `{ doc_id: string, database_block_id?: string }`.
 
-- With `database_block_id`: return `{ blockId, title, columns: [{ id, name, type, options? }], rows: [{ rowId, title, cells: { [columnName]: value } }], views: [{ id, name, mode, groupByColumnId?, groups?: [{ value, cardRowIds: string[] }] }] }`.
+- With `database_block_id`: return `{ blockId, title, columns: [{ id, name, type, options? }], rows: [{ rowId, title, cells: { [columnId]: value } }], views: [{ id, name, mode, groupByColumnId?, groups?: [{ value, cardRowIds: string[] }] }] }`. (Read/update cells are keyed by column **id** — consistent with `update_cell`'s `columnId`; only `database_create` takes cells keyed by column **name**, since no ids exist yet. The model gets the id↔name mapping from `columns`.)
 - Without it: return `{ databases: [{ blockId, title, viewModes: string[] }] }` so the model can choose.
   Permission: `Doc.Read`. Ungated.
 
