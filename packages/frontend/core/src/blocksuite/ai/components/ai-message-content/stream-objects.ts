@@ -16,6 +16,14 @@ import { property } from 'lit/decorators.js';
 import type { AffineAIPanelState } from '../../widgets/ai-panel/type';
 import type { DocDisplayConfig } from '../ai-chat-chips';
 import type { StreamObject } from '../ai-chat-messages';
+import {
+  getToolCallLabel,
+  getToolErrorFromResult,
+  getToolFailedLabel,
+  getToolResultLabel,
+  toGenericToolResults,
+  truncateContent,
+} from '../ai-tools/generic-tool-display';
 
 export class ChatContentStreamObjects extends WithDisposable(
   ShadowlessElement
@@ -75,6 +83,8 @@ export class ChatContentStreamObjects extends WithDisposable(
 
     switch (streamObject.toolName) {
       case 'web_crawl_exa':
+      case 'web_extract_tavily':
+      case 'web_crawl_tavily':
         return html`
           <web-crawl-tool
             .data=${streamObject}
@@ -82,6 +92,7 @@ export class ChatContentStreamObjects extends WithDisposable(
           ></web-crawl-tool>
         `;
       case 'web_search_exa':
+      case 'web_search_tavily':
         return html`
           <web-search-tool
             .data=${streamObject}
@@ -154,7 +165,7 @@ export class ChatContentStreamObjects extends WithDisposable(
           ></section-edit-tool>
         `;
       default: {
-        const name = streamObject.toolName + ' tool calling';
+        const name = getToolCallLabel(streamObject.toolName);
         return html`
           <tool-call-card .name=${name} .width=${this.width}></tool-call-card>
         `;
@@ -169,6 +180,8 @@ export class ChatContentStreamObjects extends WithDisposable(
 
     switch (streamObject.toolName) {
       case 'web_crawl_exa':
+      case 'web_extract_tavily':
+      case 'web_crawl_tavily':
         return html`
           <web-crawl-tool
             .data=${streamObject}
@@ -176,6 +189,7 @@ export class ChatContentStreamObjects extends WithDisposable(
           ></web-crawl-tool>
         `;
       case 'web_search_exa':
+      case 'web_search_tavily':
         return html`
           <web-search-tool
             .data=${streamObject}
@@ -256,10 +270,31 @@ export class ChatContentStreamObjects extends WithDisposable(
           ></section-edit-tool>
         `;
       default: {
-        const name = streamObject.toolName + ' tool result';
+        const { toolName, result } = streamObject;
+        const error = getToolErrorFromResult(result);
+        if (error) {
+          return html`
+            <tool-result-card
+              .name=${getToolFailedLabel(toolName)}
+              .results=${[
+                {
+                  title: error.name,
+                  content: truncateContent(error.message),
+                },
+              ]}
+              .width=${this.width}
+            ></tool-result-card>
+          `;
+        }
+        const results = toGenericToolResults(result);
+        const footerIcons = results
+          .map(item => item.icon)
+          .filter((icon): icon is string => !!icon);
         return html`
           <tool-result-card
-            .name=${name}
+            .name=${getToolResultLabel(toolName)}
+            .results=${results}
+            .footerIcons=${footerIcons}
             .width=${this.width}
           ></tool-result-card>
         `;

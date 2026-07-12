@@ -166,12 +166,41 @@ export class TextStreamParser {
             result += `\nSummarizing context\n`;
             break;
           }
-          case 'web_search_exa': {
+          case 'web_search_exa':
+          case 'web_search_tavily': {
             result += `\nSearching the web "${chunk.input.query}"\n`;
             break;
           }
-          case 'web_crawl_exa': {
+          case 'web_crawl_exa':
+          case 'web_crawl_tavily': {
             result += `\nCrawling the web "${chunk.input.url}"\n`;
+            break;
+          }
+          case 'web_extract_tavily': {
+            const urls = Array.isArray(chunk.input.urls)
+              ? chunk.input.urls.join(', ')
+              : chunk.input.urls;
+            result += `\nCrawling the web "${urls}"\n`;
+            break;
+          }
+          case 'web_map_tavily': {
+            result += `\nMapping the site "${chunk.input.url}"\n`;
+            break;
+          }
+          case 'database_read': {
+            result += `\nReading the database\n`;
+            break;
+          }
+          case 'database_create': {
+            result += `\nCreating the database\n`;
+            break;
+          }
+          case 'database_update': {
+            result += `\nUpdating the database\n`;
+            break;
+          }
+          case 'blob_read': {
+            result += `\nReading the attachment\n`;
             break;
           }
           case 'doc_keyword_search': {
@@ -229,7 +258,8 @@ export class TextStreamParser {
             }
             break;
           }
-          case 'web_search_exa': {
+          case 'web_search_exa':
+          case 'web_search_tavily': {
             const output = chunk.output;
             if (Array.isArray(output)) {
               result += `\n${this.getWebSearchLinks(output)}\n`;

@@ -11,14 +11,16 @@ interface WebCrawlToolCall {
   type: 'tool-call';
   toolCallId: string;
   toolName: string;
-  args: { url: string };
+  // `url` for crawl-like tools (web_crawl_exa, web_crawl_tavily),
+  // `urls` for batch extraction tools (web_extract_tavily).
+  args: { url?: string; urls?: string[] };
 }
 
 interface WebCrawlToolResult {
   type: 'tool-result';
   toolCallId: string;
   toolName: string;
-  args: { url: string };
+  args: { url?: string; urls?: string[] };
   result:
     | Array<{
         title: string;
@@ -40,9 +42,11 @@ export class WebCrawlTool extends WithDisposable(ShadowlessElement) {
   accessor width: Signal<number | undefined> | undefined;
 
   renderToolCall() {
+    const { url, urls } = this.data.args;
+    const target = url ?? (urls ? urls.join(', ') : '');
     return html`
       <tool-call-card
-        .name=${`Reading the website "${this.data.args.url}"`}
+        .name=${`Reading the website "${target}"`}
         .icon=${WebIcon()}
       ></tool-call-card>
     `;
@@ -55,19 +59,20 @@ export class WebCrawlTool extends WithDisposable(ShadowlessElement) {
 
     const result = this.data.result;
     if (result && Array.isArray(result) && result.length > 0) {
-      const { favicon, title, content } = result[0];
+      const results = result.map(({ favicon, title, content }) => ({
+        title: title,
+        icon: favicon,
+        content: content,
+      }));
+      const footerIcons = result.map(item => item.favicon).filter(Boolean);
       return html`
         <tool-result-card
-          .name=${'The reading is complete, and this webpage has been read'}
+          .name=${result.length > 1
+            ? 'The reading is complete, and these webpages have been read'
+            : 'The reading is complete, and this webpage has been read'}
           .icon=${WebIcon()}
-          .footerIcons=${favicon ? [favicon] : []}
-          .results=${[
-            {
-              title: title,
-              icon: favicon,
-              content: content,
-            },
-          ]}
+          .footerIcons=${footerIcons}
+          .results=${results}
           .width=${this.width}
         ></tool-result-card>
       `;
