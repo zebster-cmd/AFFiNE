@@ -1,6 +1,10 @@
 import { Button } from '@affine/admin/components/ui/button';
 import { Input } from '@affine/admin/components/ui/input';
 import { Label } from '@affine/admin/components/ui/label';
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from '@affine/admin/components/ui/radio-group';
 import { Separator } from '@affine/admin/components/ui/separator';
 import { Switch } from '@affine/admin/components/ui/switch';
 import { useMutation } from '@affine/admin/use-mutation';
@@ -8,7 +12,11 @@ import { useQuery } from '@affine/admin/use-query';
 import { cn } from '@affine/admin/utils';
 import { notify } from '@affine/component';
 import { UserFriendlyError } from '@affine/error';
-import { appConfigQuery, updateAppConfigMutation } from '@affine/graphql';
+import {
+  appConfigQuery,
+  type UpdateAppConfigInput,
+  updateAppConfigMutation,
+} from '@affine/graphql';
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -51,6 +59,20 @@ interface RequestyProfile {
   config: { apiKey?: string; baseURL?: string };
 }
 
+// The generated `JSON` scalar input type is `Record<string, string>`, which is
+// narrower than the real JSON values the server accepts. The generic settings
+// page passes `any` values for the same mutation; widen explicitly here.
+const asConfigValue = (value: unknown) =>
+  value as UpdateAppConfigInput['value'];
+
+type WebSearchProvider = 'exa' | 'tavily';
+
+const WEB_SEARCH_PROVIDERS: Array<{ value: WebSearchProvider; label: string }> =
+  [
+    { value: 'exa', label: 'Exa' },
+    { value: 'tavily', label: 'Tavily' },
+  ];
+
 function AiPage() {
   const { data, mutate } = useQuery({ query: appConfigQuery });
   const { trigger: saveUpdates } = useMutation({
@@ -71,6 +93,12 @@ function AiPage() {
     embedding: '',
     rerank: '',
   });
+  const [webSearchProvider, setWebSearchProvider] =
+    useState<WebSearchProvider>('exa');
+  const [exaKey, setExaKey] = useState('');
+  const [showExaKey, setShowExaKey] = useState(false);
+  const [tavilyKey, setTavilyKey] = useState('');
+  const [showTavilyKey, setShowTavilyKey] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Initialize the form from the current server config once it loads.
@@ -95,8 +123,20 @@ function AiPage() {
       embedding: m.embedding ?? '',
       rerank: m.rerank ?? '',
     });
+
+    setWebSearchProvider(
+      copilot?.webSearchProvider === 'tavily' ? 'tavily' : 'exa'
+    );
+    setExaKey(copilot?.exa?.key ?? '');
+    setTavilyKey(copilot?.tavily?.key ?? '');
     // Only re-init when the underlying server config identity changes.
   }, [copilot]);
+
+  const hasStoredExaKey = useMemo(() => Boolean(copilot?.exa?.key), [copilot]);
+  const hasStoredTavilyKey = useMemo(
+    () => Boolean(copilot?.tavily?.key),
+    [copilot]
+  );
 
   const hasStoredKey = useMemo(() => {
     const profiles: RequestyProfile[] = Array.isArray(
@@ -155,12 +195,27 @@ function AiPage() {
           {
             module: 'copilot',
             key: 'providers.profiles',
-            value: nextProfiles,
+            value: asConfigValue(nextProfiles),
           },
           {
             module: 'copilot',
             key: 'scenarioOverrides',
-            value: { enabled, models: nextModels },
+            value: asConfigValue({ enabled, models: nextModels }),
+          },
+          {
+            module: 'copilot',
+            key: 'webSearchProvider',
+            value: asConfigValue(webSearchProvider),
+          },
+          {
+            module: 'copilot',
+            key: 'exa',
+            value: asConfigValue({ key: exaKey.trim() }),
+          },
+          {
+            module: 'copilot',
+            key: 'tavily',
+            value: asConfigValue({ key: tavilyKey.trim() }),
           },
         ],
       })) as { updateAppConfig?: any };
@@ -172,7 +227,8 @@ function AiPage() {
 
       notify.success({
         title: 'Saved',
-        message: 'Requesty settings have been saved and applied.',
+        message:
+          'Requesty and web search settings have been saved and applied.',
       });
     } catch (e) {
       const error = UserFriendlyError.fromAny(e);
@@ -186,6 +242,9 @@ function AiPage() {
     baseURL,
     enabled,
     models,
+    webSearchProvider,
+    exaKey,
+    tavilyKey,
     copilot,
     hasStoredKey,
     saveUpdates,
@@ -293,6 +352,90 @@ function AiPage() {
                 Model ids must keep the{' '}
                 <code className="font-mono">requesty/</code> prefix — it maps to
                 this provider. Image and transcript are not yet supported.
+              </div>
+            </div>
+
+            {/* Web search */}
+            <div className="flex flex-col rounded-md border py-4 gap-4">
+              <div className="px-5 space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Web search</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    The provider that backs the copilot web search tools.
+                  </p>
+                </div>
+                <RadioGroup
+                  className="flex items-center gap-6"
+                  value={webSearchProvider}
+                  onValueChange={value =>
+                    setWebSearchProvider(value as WebSearchProvider)
+                  }
+                >
+                  {WEB_SEARCH_PROVIDERS.map(({ value, label }) => (
+                    <div key={value} className="flex items-center gap-2">
+                      <RadioGroupItem
+                        value={value}
+                        id={`web-search-${value}`}
+                      />
+                      <Label
+                        htmlFor={`web-search-${value}`}
+                        className="text-sm font-normal"
+                      >
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+                <p className="text-sm text-muted-foreground">
+                  Switching provider takes effect immediately for new chat
+                  messages. Each provider needs its API key set below.
+                </p>
+              </div>
+              <Separator />
+              <div className="px-5 space-y-3">
+                <Label className="text-sm font-medium">Exa API key</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type={showExaKey ? 'text' : 'password'}
+                    className="py-2 px-3 text-base font-normal placeholder:opacity-50"
+                    value={exaKey}
+                    placeholder={
+                      hasStoredExaKey ? '•••••••• (stored)' : 'exa-…'
+                    }
+                    onChange={e => setExaKey(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowExaKey(v => !v)}
+                  >
+                    {showExaKey ? 'Hide' : 'Show'}
+                  </Button>
+                </div>
+              </div>
+              <Separator />
+              <div className="px-5 space-y-3">
+                <Label className="text-sm font-medium">Tavily API key</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type={showTavilyKey ? 'text' : 'password'}
+                    className="py-2 px-3 text-base font-normal placeholder:opacity-50"
+                    value={tavilyKey}
+                    placeholder={
+                      hasStoredTavilyKey ? '•••••••• (stored)' : 'tvly-…'
+                    }
+                    onChange={e => setTavilyKey(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowTavilyKey(v => !v)}
+                  >
+                    {showTavilyKey ? 'Hide' : 'Show'}
+                  </Button>
+                </div>
               </div>
             </div>
 

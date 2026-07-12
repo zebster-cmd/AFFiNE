@@ -155,6 +155,8 @@ export const KNOWN_CONFIG_GROUPS = [
       'providers.fal',
       'unsplash',
       'exa',
+      'tavily',
+      'webSearchProvider',
       {
         key: 'storage',
         desc: 'The storage provider for copilot blobs',
