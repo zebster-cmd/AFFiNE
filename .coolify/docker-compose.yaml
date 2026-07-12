@@ -15,6 +15,10 @@
 services:
   affine:
     image: ${AFFINE_IMAGE:-ghcr.io/zebster-cmd/affine:requesty}
+    # :requesty is a mutable tag rebuilt on every branch push; without this,
+    # compose keeps the locally cached image and redeploys never pick up new
+    # builds.
+    pull_policy: always
     # Generate /root/.affine/config/config.json from env, run DB migrations,
     # then start the server. `$$VAR` escapes Compose interpolation so the
     # container shell expands the values from `environment:` below (keeps the
