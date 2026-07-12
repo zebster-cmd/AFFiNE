@@ -37,6 +37,14 @@ test('maps embedding/rerank one-to-one', t => {
   );
 });
 
+test('maps the workspace_indexing featureKind to the embedding scenario', t => {
+  const out = resolver(ENABLED).resolve(
+    { modelId: 'gemini-embedding-001' },
+    'workspace_indexing'
+  );
+  t.is(out.modelId, 'requesty/nebius/Qwen/Qwen3-Embedding-8B');
+});
+
 test('chat honors an explicit model selection (picker wins over the default)', t => {
   const out = resolver(ENABLED).resolve(
     { modelId: 'requesty/openai/gpt-4o' },
@@ -101,7 +109,7 @@ test('does nothing when the scenario has no configured model', t => {
 test('does nothing when featureKind has no mapped scenario', t => {
   const out = resolver(ENABLED).resolve(
     { modelId: 'requesty/openai/gpt-4o' },
-    'workspace_indexing'
+    'not-a-feature-kind'
   );
   t.is(out.modelId, 'requesty/openai/gpt-4o');
 });

@@ -10,6 +10,9 @@ const FEATURE_KIND_TO_SCENARIO: Record<string, Scenario> = {
   action: 'chat',
   image: 'image',
   embedding: 'embedding',
+  // Background doc/file indexing embeds under its own feature kind but must
+  // use the same embedding model as everything else.
+  workspace_indexing: 'embedding',
   rerank: 'rerank',
   transcript: 'transcript',
 };
