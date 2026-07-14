@@ -53,6 +53,25 @@ export function readPageMetaFromRoot(
   };
 }
 
+/**
+ * Resolve doc ids in the workspace root's `meta.pages[]` whose title exactly
+ * matches `title`. Used by the `doc_links_update` tool to translate a
+ * name-or-id target reference into a doc id (see design.md Decision 4/5 -
+ * name resolution is the tool layer's job, not the writer's).
+ */
+export function resolveDocIdsByTitle(
+  rootBin: Buffer | Uint8Array | null | undefined,
+  title: string
+): string[] {
+  const doc = loadDoc(rootBin);
+  const meta = doc.getMap('meta').toJSON() as {
+    pages?: Array<{ id?: string; title?: string }>;
+  };
+  return (meta.pages ?? [])
+    .filter(page => typeof page.id === 'string' && page.title === title)
+    .map(page => page.id as string);
+}
+
 /** Read the workspace tag definitions from `meta.properties.tags.options`. */
 export function readTagOptionsFromRoot(
   rootBin: Buffer | Uint8Array | null | undefined
