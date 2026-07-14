@@ -2,6 +2,10 @@ import { Logger } from '@nestjs/common';
 
 import type { LlmRequest, LlmToolLoopStreamEvent } from '../../../../native';
 import type { NodeTextMiddleware } from '../../config';
+import {
+  type ReasoningSegment,
+  ThinkTagSplitter,
+} from '../../providers/reasoning';
 import type { PromptMessage, StreamObject } from '../../providers/types';
 import {
   CitationFootnoteFormatter,
@@ -167,7 +171,10 @@ export class NativeProviderAdapter {
     messages?: PromptMessage[]
   ) {
     let output = '';
-    for await (const chunk of this.streamText(request, signal, messages)) {
+    // Tool/value text (e.g. code_artifact) is content only — never reasoning.
+    for await (const chunk of this.streamText(request, signal, messages, {
+      emitReasoning: false,
+    })) {
       output += chunk;
     }
     return output.trim();
@@ -176,13 +183,43 @@ export class NativeProviderAdapter {
   async *streamText(
     request: LlmRequest,
     signal?: AbortSignal,
-    messages?: PromptMessage[]
+    messages?: PromptMessage[],
+    options: { emitReasoning?: boolean } = {}
   ): AsyncIterableIterator<string> {
+    const emitReasoning = options.emitReasoning ?? true;
     const textParser = this.#enableCallout ? new TextStreamParser() : null;
     const citationFormatter = this.#enableCitationFootnote
       ? new CitationFootnoteFormatter()
       : null;
+    // Separates inline <think>…</think> reasoning out of the content stream so
+    // it is routed onto the reasoning channel (or dropped when emitReasoning is
+    // false). No-op for providers that separate reasoning natively.
+    const thinkSplitter = new ThinkTagSplitter();
     let streamPartId = 0;
+    const routeSegments = function* (
+      segments: ReasoningSegment[]
+    ): Generator<string> {
+      for (const segment of segments) {
+        if (segment.kind === 'reasoning') {
+          if (!emitReasoning) continue;
+          yield textParser
+            ? textParser.parse({
+                type: 'reasoning-delta',
+                id: String(streamPartId++),
+                text: segment.text,
+              })
+            : segment.text;
+        } else {
+          yield textParser
+            ? textParser.parse({
+                type: 'text-delta',
+                id: String(streamPartId++),
+                text: segment.text,
+              })
+            : segment.text;
+        }
+      }
+    };
     const usageState: {
       model?: string;
       usage?: Extract<LlmToolLoopStreamEvent, { type: 'usage' }>['usage'];
@@ -212,18 +249,11 @@ export class NativeProviderAdapter {
         }
         case 'text_delta': {
           const textEvent = event as unknown as { text: string };
-          if (textParser) {
-            yield textParser.parse({
-              type: 'text-delta',
-              id: String(streamPartId++),
-              text: textEvent.text,
-            });
-          } else {
-            yield textEvent.text;
-          }
+          yield* routeSegments(thinkSplitter.push(textEvent.text));
           break;
         }
         case 'reasoning_delta': {
+          if (!emitReasoning) break;
           const reasoningEvent = event as unknown as { text: string };
           if (textParser) {
             yield textParser.parse({
@@ -280,6 +310,8 @@ export class NativeProviderAdapter {
             { type: 'done' }
           >;
           usageState.usage = doneEvent.usage ?? usageState.usage;
+          // Drain any buffered inline-reasoning fragment before the tails.
+          yield* routeSegments(thinkSplitter.flush());
           const footnotes = textParser?.end() ?? '';
           const citations = citationFormatter?.end() ?? '';
           const tails = [citations, footnotes].filter(Boolean).join('\n');
@@ -311,8 +343,23 @@ export class NativeProviderAdapter {
     const citationFormatter = this.#enableCitationFootnote
       ? new CitationFootnoteFormatter()
       : null;
+    const thinkSplitter = new ThinkTagSplitter();
     const fallbackAttachmentFootnotes = new Map<string, AttachmentFootnote>();
     let hasFootnoteReference = false;
+    const routeSegments = function* (
+      segments: ReasoningSegment[]
+    ): Generator<StreamObject> {
+      for (const segment of segments) {
+        if (segment.kind === 'reasoning') {
+          yield { type: 'reasoning', textDelta: segment.text };
+        } else {
+          if (segment.text.includes('[^')) {
+            hasFootnoteReference = true;
+          }
+          yield { type: 'text-delta', textDelta: segment.text };
+        }
+      }
+    };
     const usageState: {
       model?: string;
       usage?: Extract<LlmToolLoopStreamEvent, { type: 'usage' }>['usage'];
@@ -342,10 +389,7 @@ export class NativeProviderAdapter {
         }
         case 'text_delta': {
           const textEvent = event as unknown as { text: string };
-          if (textEvent.text.includes('[^')) {
-            hasFootnoteReference = true;
-          }
-          yield { type: 'text-delta', textDelta: textEvent.text };
+          yield* routeSegments(thinkSplitter.push(textEvent.text));
           break;
         }
         case 'reasoning_delta': {
@@ -394,6 +438,8 @@ export class NativeProviderAdapter {
             { type: 'done' }
           >;
           usageState.usage = doneEvent.usage ?? usageState.usage;
+          // Drain any buffered inline-reasoning fragment before the tails.
+          yield* routeSegments(thinkSplitter.flush());
           const citations = citationFormatter?.end() ?? '';
           if (citations) {
             hasFootnoteReference = true;
