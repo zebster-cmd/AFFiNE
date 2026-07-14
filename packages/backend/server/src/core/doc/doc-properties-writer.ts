@@ -279,6 +279,65 @@ function describePropertyCandidates(matches: PropertyDef[]): string {
   return matches.map(m => m.id).join(', ');
 }
 
+/**
+ * Returns `page`'s `tags` field as a `Y.Array`, creating and attaching a
+ * fresh empty one first if it's missing or not a `Y.Array` (legacy or
+ * externally-created `meta.pages[]` entries may have no `tags` field at all -
+ * mirrors the reader's tolerance of a missing tags array in
+ * `readPageMetaFromRoot`).
+ */
+function ensureTagsArray(page: Y.Map<unknown>): Y.Array<string> {
+  const existing = page.get('tags');
+  if (existing instanceof Y.Array) {
+    return existing as Y.Array<string>;
+  }
+  const tags = new Y.Array<string>();
+  page.set('tags', tags);
+  return tags;
+}
+
+/**
+ * Picks an index for a newly favorited doc that sorts after every currently
+ * favorited row, instead of a fixed constant (which collides whenever more
+ * than one doc is favorited). This is a simple monotonic scheme, not true
+ * fractional indexing - the `fractional-indexing` package isn't a dependency
+ * of this package - but appending a suffix to the current maximum keeps
+ * plain string comparison ordering correct.
+ */
+function nextFavoriteIndex(existingIndices: string[]): string {
+  if (existingIndices.length === 0) {
+    return 'a0';
+  }
+  const max = existingIndices.reduce((a, b) => (b > a ? b : a));
+  return `${max}a`;
+}
+
+/**
+ * Reads the `index` field of every non-deleted favorite row in a user's
+ * favorites doc, for {@link nextFavoriteIndex}.
+ */
+function readFavoriteIndices(bin: Buffer | null): string[] {
+  if (!bin) {
+    return [];
+  }
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, bin);
+  const indices: string[] = [];
+  for (const key of doc.share.keys()) {
+    if (!key.startsWith('doc:')) {
+      continue;
+    }
+    const row = doc.getMap(key).toJSON() as Record<string, unknown>;
+    if (row[ORM_DELETE_FLAG] === true) {
+      continue;
+    }
+    if (typeof row.index === 'string') {
+      indices.push(row.index);
+    }
+  }
+  return indices;
+}
+
 const ROOT_OPS = new Set<DocPropertyOp['op']>([
   'set_title',
   'set_trash',
@@ -330,15 +389,20 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
     const needsRoot = ops.some(op => ROOT_OPS.has(op.op));
     const needsPageCheck = ops.some(op => PAGE_OPS.has(op.op));
     const needsInfo = ops.some(op => INFO_OPS.has(op.op));
+    const needsFavorite = ops.some(op => op.op === 'set_favorite');
 
-    // `docProperties` and the favorites doc are write-only here: set_journal/
-    // set_mode/set_property/set_favorite never need to read existing content
-    // to validate or apply, only the root doc (tags/page) and
-    // docCustomPropertyInfo (to resolve set_property's property name) do.
-    const [rootBin, infoBin] = await Promise.all([
+    // `docProperties` is write-only here: set_journal/set_mode/set_property
+    // never need to read existing content to validate or apply. The root doc
+    // (tags/page), docCustomPropertyInfo (to resolve set_property's property
+    // name), and the favorites doc (to pick a non-colliding index for a new
+    // favorite, see `nextFavoriteIndex`) do need a read first.
+    const [rootBin, infoBin, favoriteBin] = await Promise.all([
       needsRoot ? this.getBinary(workspaceId, workspaceId) : null,
       needsInfo
         ? this.getBinary(workspaceId, docCustomPropertyInfoDocId(workspaceId))
+        : null,
+      needsFavorite
+        ? this.getBinary(workspaceId, favoriteDocId(userId, workspaceId))
         : null,
     ]);
 
@@ -363,6 +427,12 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
       needsInfo ? readPropertyDefs(infoBin) : []
     );
     const currentTagIds = new Set(pageMeta?.tagIds ?? []);
+    // Simulated resolution state for set_favorite, mirroring tagOptions/
+    // propertyDefs above: mutated as a batch's own set_favorite ops are
+    // processed so each gets a distinct, ordering-correct index.
+    let favoriteIndices: string[] = needsFavorite
+      ? readFavoriteIndices(favoriteBin)
+      : [];
 
     const createdTagIds: string[] = [];
     const createdPropertyIds: string[] = [];
@@ -376,12 +446,9 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
         case 'set_title': {
           const title = op.title;
           rootMutators.push(doc => {
-            const page = findPageEntry(doc, docId);
-            if (!page) {
-              throw new NotFoundException(
-                `Doc "${docId}" not found in workspace root meta.pages`
-              );
-            }
+            // Existence already guaranteed by the up-front `pageMeta` check
+            // (`needsPageCheck`) above, before any mutator runs.
+            const page = findPageEntry(doc, docId) as Y.Map<unknown>;
             page.set('title', title);
           });
           break;
@@ -390,12 +457,9 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
         case 'set_trash': {
           const trash = op.trash;
           rootMutators.push(doc => {
-            const page = findPageEntry(doc, docId);
-            if (!page) {
-              throw new NotFoundException(
-                `Doc "${docId}" not found in workspace root meta.pages`
-              );
-            }
+            // Existence already guaranteed by the up-front `pageMeta` check
+            // (`needsPageCheck`) above, before any mutator runs.
+            const page = findPageEntry(doc, docId) as Y.Map<unknown>;
             page.set('trash', trash);
           });
           break;
@@ -450,13 +514,10 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
           if (!currentTagIds.has(tagId)) {
             currentTagIds.add(tagId);
             rootMutators.push(doc => {
-              const page = findPageEntry(doc, docId);
-              if (!page) {
-                throw new NotFoundException(
-                  `Doc "${docId}" not found in workspace root meta.pages`
-                );
-              }
-              const tags = page.get('tags') as Y.Array<string>;
+              // Existence already guaranteed by the up-front `pageMeta` check
+              // (`needsPageCheck`) above, before any mutator runs.
+              const page = findPageEntry(doc, docId) as Y.Map<unknown>;
+              const tags = ensureTagsArray(page);
               if (!tags.toArray().includes(tagId)) {
                 tags.push([tagId]);
               }
@@ -483,13 +544,10 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
           }
           currentTagIds.delete(tagId);
           rootMutators.push(doc => {
-            const page = findPageEntry(doc, docId);
-            if (!page) {
-              throw new NotFoundException(
-                `Doc "${docId}" not found in workspace root meta.pages`
-              );
-            }
-            const tags = page.get('tags') as Y.Array<string>;
+            // Existence already guaranteed by the up-front `pageMeta` check
+            // (`needsPageCheck`) above, before any mutator runs.
+            const page = findPageEntry(doc, docId) as Y.Map<unknown>;
+            const tags = ensureTagsArray(page);
             const idx = tags.toArray().indexOf(tagId);
             if (idx !== -1) {
               tags.delete(idx, 1);
@@ -577,6 +635,14 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
 
         case 'set_favorite': {
           const favorite = op.favorite;
+          // Resolved now (not inside the mutator) so it reflects this batch's
+          // own prior set_favorite ops too, same as tagOptions/propertyDefs.
+          // Only computed (and non-null) when favoriting; unused otherwise.
+          let newIndex: string | null = null;
+          if (favorite) {
+            newIndex = nextFavoriteIndex(favoriteIndices);
+            favoriteIndices = [...favoriteIndices, newIndex];
+          }
           favoriteMutators.push(doc => {
             const key = favoriteKey(docId);
             const row = doc.getMap(key);
@@ -585,7 +651,7 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
                 row.delete(ORM_DELETE_FLAG);
               }
               row.set('key', key);
-              row.set('index', 'a0');
+              row.set('index', newIndex as string);
             } else {
               // Mirror the ORM's soft-delete: clear every non-key field, then
               // flag the row deleted - readFavorite() then reports `false`.

@@ -276,6 +276,39 @@ test('applyOps add_tag with an ambiguous name lists candidate ids', async t => {
   t.true(err.message.includes('t2'));
 });
 
+test('applyOps add_tag on a page entry with no tags field creates one and succeeds', async t => {
+  // No `tags` key at all on this page entry (fixture builder omits it when
+  // `tags` isn't passed) - simulates a legacy/externally-created doc.
+  const root = buildRootDoc({
+    pages: [{ id: DOC }],
+    tagOptions: [{ id: 't1', value: 'Urgent', color: 'red' }],
+  });
+  const { writer, storage } = makeWriter({ root });
+
+  await t.notThrowsAsync(
+    writer.applyOps(WS, DOC, USER, [{ op: 'add_tag', tag: 'Urgent' }])
+  );
+
+  const merged = await storage.getDoc(WS, WS);
+  t.deepEqual(readPageMetaFromRoot(merged!.bin, DOC)?.tagIds, ['t1']);
+});
+
+test('applyOps remove_tag with an ambiguous name lists candidate ids', async t => {
+  const root = buildRootDoc({
+    pages: [{ id: DOC, tags: [] }],
+    tagOptions: [
+      { id: 't1', value: 'Work', color: 'red' },
+      { id: 't2', value: 'Work', color: 'blue' },
+    ],
+  });
+  const { writer } = makeWriter({ root });
+  const err = await t.throwsAsync(
+    writer.applyOps(WS, DOC, USER, [{ op: 'remove_tag', tag: 'Work' }])
+  );
+  t.true(err.message.includes('t1'));
+  t.true(err.message.includes('t2'));
+});
+
 test('applyOps remove_tag removes the resolved tag id from the doc', async t => {
   const root = buildRootDoc({
     pages: [{ id: DOC, tags: ['t1'] }],
@@ -357,6 +390,21 @@ test('applyOps set_property writes the encoded value under custom:<id>', async t
   t.is(row.custom.p1, '5');
 });
 
+test('applyOps set_property with an ambiguous name lists candidate ids', async t => {
+  const info = buildCustomPropertyInfoDoc([
+    { id: 'p1', name: 'Status', type: 'text' },
+    { id: 'p2', name: 'Status', type: 'number' },
+  ]);
+  const { writer } = makeWriter({ info });
+  const err = await t.throwsAsync(
+    writer.applyOps(WS, DOC, USER, [
+      { op: 'set_property', property: 'Status', value: 1 },
+    ])
+  );
+  t.true(err.message.includes('p1'));
+  t.true(err.message.includes('p2'));
+});
+
 test('applyOps set_property for an undefined property errors instructing define_property first', async t => {
   const { writer, storage } = makeWriter({});
   const err = await t.throwsAsync(
@@ -378,6 +426,24 @@ test('applyOps set_favorite:true creates the favorites doc row for the acting us
 
   const favRec = await storage.getDoc(WS, favoriteDocId(USER, WS));
   t.true(readFavorite(favRec!.bin, DOC));
+});
+
+test('applyOps set_favorite:true gives a newly favorited doc an index that sorts after existing favorites', async t => {
+  const OTHER_DOC = 'doc-other';
+  const favorite = buildFavoriteDoc([{ docId: OTHER_DOC, index: 'a0' }]);
+  const { writer, storage } = makeWriter({ favorite });
+
+  await writer.applyOps(WS, DOC, USER, [
+    { op: 'set_favorite', favorite: true },
+  ]);
+
+  const favRec = await storage.getDoc(WS, favoriteDocId(USER, WS));
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, favRec!.bin);
+  const newIndex = doc.getMap(`doc:${DOC}`).get('index');
+  const existingIndex = doc.getMap(`doc:${OTHER_DOC}`).get('index');
+  t.is(existingIndex, 'a0');
+  t.true(typeof newIndex === 'string' && (newIndex as string) > 'a0');
 });
 
 test('applyOps set_favorite:false soft-deletes an existing favorite row', async t => {

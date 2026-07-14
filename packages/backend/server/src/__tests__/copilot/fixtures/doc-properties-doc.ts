@@ -14,7 +14,12 @@ export interface PageFixture {
   id: string;
   title?: string;
   trash?: boolean;
-  tags?: string[]; // tag ids
+  /**
+   * Tag ids. Omit entirely (as opposed to passing `[]`) to build a page entry
+   * with NO `tags` field at all - simulating a legacy or externally-created
+   * doc, which `DocPropertiesWriter`'s add_tag/remove_tag must tolerate.
+   */
+  tags?: string[];
 }
 
 export interface TagOptionFixture {
@@ -37,9 +42,11 @@ export function buildRootDoc(input: {
     pageMap.set('id', page.id);
     pageMap.set('title', page.title ?? '');
     if (page.trash !== undefined) pageMap.set('trash', page.trash);
-    const tags = new Y.Array<string>();
-    if (page.tags?.length) tags.push(page.tags);
-    pageMap.set('tags', tags);
+    if (page.tags !== undefined) {
+      const tags = new Y.Array<string>();
+      if (page.tags.length) tags.push(page.tags);
+      pageMap.set('tags', tags);
+    }
     pages.push([pageMap]);
   }
   meta.set('pages', pages);
