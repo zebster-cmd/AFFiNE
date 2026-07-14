@@ -28,18 +28,18 @@
 
 ## 5. Links reader (TDD)
 
-- [ ] 5.1 Failing test: outgoing links via `IndexerService` (`docId==X ∧ exists refDocId`), resolved titles
-- [ ] 5.2 Failing test: backlinks via aggregate (`refDocId==X` group by `docId`)
-- [ ] 5.3 Implement `LinksReader` over `IndexerService`
+- [x] 5.1 Failing test: outgoing links via `IndexerService` (`docId==X ∧ exists refDocId`), resolved titles
+- [x] 5.2 Failing test: backlinks via aggregate (`refDocId==X` group by `docId`)
+- [x] 5.3 Implement `LinksReader` over `IndexerService`
 
 ## 6. Links writer (TDD)
 
-- [ ] 6.1 Failing test: `create_link` appends an `affine:embed-linked-doc` block (`prop:pageId`) under the note; returns block id
-- [ ] 6.2 Failing test: `create_link` inline mode inserts a `{reference:{type:'LinkedPage',pageId}}` space-delta at an anchor
-- [ ] 6.3 Failing tests: `remove_link` (embed by id; inline by delta-walk match on pageId), `retarget_link`
-- [ ] 6.4 Failing test: `create_doc_and_link` creates + registers a new doc (reuse `DocWriter.createDoc`) and links to it
-- [ ] 6.5 Failing tests: ambiguous/missing target → `toolError`
-- [ ] 6.6 Implement `LinksWriter`
+- [x] 6.1 Failing test: `create_link` appends an `affine:embed-linked-doc` block (`prop:pageId`) under the note; returns block id
+- [x] 6.2 Failing test: `create_link` inline mode inserts a `{reference:{type:'LinkedPage',pageId}}` space-delta at an anchor
+- [x] 6.3 Failing tests: `remove_link` (embed by id; inline by delta-walk match on pageId), `retarget_link`
+- [x] 6.4 Failing test: `create_doc_and_link` creates + registers a new doc (reuse `DocWriter.createDoc`) and links to it
+- [x] 6.5 Failing tests: missing target/anchor/blockId → a clear error the tool layer wraps as `toolError` (name→id _ambiguity_ resolution is intentionally the tool layer's job per Decision 4/5 — `applyOps` takes ids only, so there is no name ambiguity to exercise at this layer; see task 7)
+- [x] 6.6 Implement `LinksWriter`
 
 ## 7. Copilot tools (defineTool wrappers)
 
