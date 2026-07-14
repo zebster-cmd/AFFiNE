@@ -43,11 +43,11 @@
 
 ## 7. Copilot tools (defineTool wrappers)
 
-- [ ] 7.1 `doc-properties-read.ts` (Doc.Read, ungated) — permission check + delegate to `PropertiesReader`
-- [ ] 7.2 `doc-properties-update.ts` (Doc.Update, gated) — batched ops → `PropertiesWriter`
-- [ ] 7.3 `doc-links-read.ts` (Doc.Read, ungated) → `LinksReader`
-- [ ] 7.4 `doc-links-update.ts` (Doc.Update, gated) → `LinksWriter`
-- [ ] 7.5 Tool-layer tests: permission-denied → `toolError`; unknown ids → naming errors
+- [x] 7.1 `doc-properties-read.ts` (Doc.Read, ungated) — permission check + delegate to `PropertiesReader`
+- [x] 7.2 `doc-properties-update.ts` (Doc.Update, gated) — batched ops → `PropertiesWriter`
+- [x] 7.3 `doc-links-read.ts` (Doc.Read, ungated) → `LinksReader`
+- [x] 7.4 `doc-links-update.ts` (Doc.Update, gated) → `LinksWriter`
+- [x] 7.5 Tool-layer tests: permission-denied → `toolError`; unknown ids → naming errors
 
 ## 8. Runtime & prompt wiring
 
