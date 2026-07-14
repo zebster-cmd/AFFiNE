@@ -1,30 +1,30 @@
 ## 1. Foundations & fixtures
 
-- [ ] 1.1 Add a favorites-doc fixture: storage id `userdata$<userId>$<workspaceId>$favorite`, row = top-level `Y.Map` named `doc:<docId>` with fields `key`/`index`; cover the not-yet-exists case (writer creates a fresh `Y.Doc` on first write)
-- [ ] 1.2 Build test fixtures: a workspace root doc binary (with `meta.pages[]` + `meta.properties.tags.options`), a `db$<ws>$docProperties` binary, a `db$<ws>$docCustomPropertyInfo` binary, and a per-doc binary with an inline ref + embed block
-- [ ] 1.3 Add a shared `applyToBinary`/`pushDelta` helper (or reuse the one in `database-writer.ts`) usable across the new readers/writers
+- [x] 1.1 Add a favorites-doc fixture: storage id `userdata$<userId>$<workspaceId>$favorite`, row = top-level `Y.Map` named `doc:<docId>` with fields `key`/`index`; cover the not-yet-exists case (writer creates a fresh `Y.Doc` on first write)
+- [x] 1.2 Build test fixtures: a workspace root doc binary (with `meta.pages[]` + `meta.properties.tags.options`), a `db$<ws>$docProperties` binary, a `db$<ws>$docCustomPropertyInfo` binary, and a per-doc binary with an inline ref + embed block
+- [x] 1.3 Add a shared `applyToBinary`/`pushDelta` helper (or reuse the one in `database-writer.ts`) usable across the new readers/writers
 
 ## 2. Properties reader (TDD)
 
-- [ ] 2.1 Failing test: read tags (ids → resolved name+color) from the root doc
-- [ ] 2.2 Failing test: read journal/mode/custom values from `docProperties`, resolving names/types from `docCustomPropertyInfo`
-- [ ] 2.3 Failing test: read favorite state from the userspace doc; read title/trash from root doc
-- [ ] 2.4 Implement `PropertiesReader` (aggregates all zones into one resolved JSON view) to pass 2.1–2.3
+- [x] 2.1 Failing test: read tags (ids → resolved name+color) from the root doc
+- [x] 2.2 Failing test: read journal/mode/custom values from `docProperties`, resolving names/types from `docCustomPropertyInfo`
+- [x] 2.3 Failing test: read favorite state from the userspace doc; read title/trash from root doc
+- [x] 2.4 Implement `PropertiesReader` (aggregates all zones into one resolved JSON view) to pass 2.1–2.3
 
 ## 3. Properties writer — value codec + core metadata (TDD)
 
-- [ ] 3.1 Failing tests for the string codec (text/number/checkbox/date/tags encode→string, best-effort decode by type)
-- [ ] 3.2 Failing tests: `set_title`, `set_trash`, `set_journal` (`YYYY-MM-DD`), `set_mode` (`page`|`edgeless`)
-- [ ] 3.3 Implement codec + core-metadata ops in `PropertiesWriter` (delta push per affected doc)
+- [x] 3.1 Failing tests for the string codec (text/number/checkbox/date/tags encode→string, best-effort decode by type)
+- [x] 3.2 Failing tests: `set_title`, `set_trash`, `set_journal` (`YYYY-MM-DD`), `set_mode` (`page`|`edgeless`)
+- [x] 3.3 Implement codec + core-metadata ops in `PropertiesWriter` (delta push per affected doc)
 
 ## 4. Properties writer — tags & custom properties (TDD)
 
-- [ ] 4.1 Failing tests: `create_tag` (adds `{id,value,color}` to root options), `add_tag`/`remove_tag` by name, missing-tag error, ambiguous-name error
-- [ ] 4.2 Failing tests: `define_property` (writes `docCustomPropertyInfo`), `set_property` by name, undefined-property error, unsupported-type (`select`) error
-- [ ] 4.3 Failing test: `set_favorite` writes the userspace favorites doc (acting-user scoped)
-- [ ] 4.4 Implement tag/property/favorite ops
-- [ ] 4.5 Failing test: mid-batch invalid op aborts the whole batch (no partial write across docs)
-- [ ] 4.6 Implement up-front batch validation + atomic apply (grouped per target doc)
+- [x] 4.1 Failing tests: `create_tag` (adds `{id,value,color}` to root options), `add_tag`/`remove_tag` by name, missing-tag error, ambiguous-name error
+- [x] 4.2 Failing tests: `define_property` (writes `docCustomPropertyInfo`), `set_property` by name, undefined-property error, unsupported-type (`select`) error
+- [x] 4.3 Failing test: `set_favorite` writes the userspace favorites doc (acting-user scoped)
+- [x] 4.4 Implement tag/property/favorite ops
+- [x] 4.5 Failing test: mid-batch invalid op aborts the whole batch (no partial write across docs)
+- [x] 4.6 Implement up-front batch validation + atomic apply (grouped per target doc)
 
 ## 5. Links reader (TDD)
 
@@ -59,7 +59,7 @@
 
 ## 9. Verify
 
-- [ ] 9.1 Round-trip test: `doc_properties_update` then `doc_properties_read` reflects every attribute set
-- [ ] 9.2 Concurrency test: overlapping delta (writer vs. simulated client edit) merges without lost updates
+- [x] 9.1 Round-trip test: `doc_properties_update` then `doc_properties_read` reflects every attribute set (covered at the writer/reader unit level; the `doc_properties_update`/`doc_properties_read` tool wrappers are Track A tasks 7-8, not yet built)
+- [x] 9.2 Concurrency test: overlapping delta (writer vs. simulated client edit) merges without lost updates
 - [ ] 9.3 Run the copilot ava suite (`packages/backend/server/src/__tests__/copilot/`, Node 22 in CI) — all green
 - [ ] 9.4 Manually confirm via the copilot: set tags/properties/journal/mode/favorite and create/read/remove a link on a real doc
