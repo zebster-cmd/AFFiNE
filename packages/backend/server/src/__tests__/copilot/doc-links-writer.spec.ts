@@ -269,6 +269,23 @@ test('applyOps remove_link without a blockId searches the whole doc for a matchi
   t.is(referenceOps(p1.get('prop:text') as Y.Text).length, 1);
 });
 
+test('applyOps remove_link with a blockId whose embed targets a different doc throws and pushes nothing', async t => {
+  const bin = buildLinksDoc({ embeds: [{ id: 'e1', pageId: 'target-1' }] });
+  const { writer, storage } = makeWriter(bin);
+
+  // e1 actually links to target-1, but the caller claims target-2 - must not
+  // silently delete the wrong link.
+  await t.throwsAsync(
+    writer.applyOps(WS, DOC, [
+      { op: 'remove_link', targetDocId: 'target-2', blockId: 'e1' },
+    ])
+  );
+  t.is(storage.pushed.length, 0);
+
+  const doc = loadDoc(storage.currentBin());
+  t.true(doc.getMap('blocks').has('e1'));
+});
+
 test('applyOps remove_link for a target with no matching link anywhere throws and pushes nothing', async t => {
   const bin = buildLinksDoc({ paragraphs: [{ id: 'p1', text: 'Hello' }] });
   const { writer, storage } = makeWriter(bin);
@@ -317,6 +334,29 @@ test('applyOps retarget_link replaces an inline reference delta (delete + re-ins
   t.is(refs.length, 1);
   t.is(refs[0].attributes?.reference?.pageId, 'target-2');
   t.is(ytext.toString(), 'Hello ');
+});
+
+test('applyOps retarget_link with a blockId whose embed targets a different fromTargetDocId throws and pushes nothing', async t => {
+  const bin = buildLinksDoc({ embeds: [{ id: 'e1', pageId: 'target-1' }] });
+  const { writer, storage } = makeWriter(bin);
+
+  // e1 actually links to target-1, but the caller claims fromTargetDocId
+  // target-9 - must not silently retarget the wrong link.
+  await t.throwsAsync(
+    writer.applyOps(WS, DOC, [
+      {
+        op: 'retarget_link',
+        blockId: 'e1',
+        fromTargetDocId: 'target-9',
+        toTargetDocId: 'target-2',
+      },
+    ])
+  );
+  t.is(storage.pushed.length, 0);
+
+  const doc = loadDoc(storage.currentBin());
+  const block = doc.getMap('blocks').get('e1') as Y.Map<unknown>;
+  t.is(block.get('prop:pageId'), 'target-1');
 });
 
 test('applyOps retarget_link without a blockId locates the link doc-wide via fromTargetDocId', async t => {
@@ -369,6 +409,37 @@ test('applyOps create_doc_and_link creates a new doc via DocWriter and embed-lin
     .get(result.created[0].blockId) as Y.Map<unknown>;
   t.is(block.get('sys:flavour'), 'affine:embed-linked-doc');
   t.is(block.get('prop:pageId'), 'new-doc-1');
+});
+
+test('applyOps create_doc_and_link (embed) on a source doc with no note block throws and creates no new doc', async t => {
+  const bin = (() => {
+    // A doc with only an affine:page, no note - mirrors the "create_link on a
+    // doc with no note block" fixture above. Validation for
+    // create_doc_and_link's embed mode must run BEFORE DocWriter.createDoc is
+    // called, so a missing note must never leave a newly-created, registered
+    // -but-orphaned doc behind.
+    const doc = new Y.Doc();
+    const blocks = doc.getMap('blocks');
+    doc.transact(() => {
+      const page = new Y.Map<unknown>();
+      page.set('sys:id', 'page');
+      page.set('sys:flavour', 'affine:page');
+      page.set('sys:children', new Y.Array<string>());
+      blocks.set('page', page);
+    });
+    return Y.encodeStateAsUpdate(doc);
+  })();
+  const { writer, storage, docWriter } = makeWriter(bin);
+
+  await t.throwsAsync(
+    writer.applyOps(WS, DOC, [
+      { op: 'create_doc_and_link', title: 'Should not be created' },
+    ])
+  );
+  t.is(storage.pushed.length, 0);
+  // The critical assertion: DocWriter.createDoc must never have been
+  // reached, so no new doc was registered anywhere (no orphan page).
+  t.is(docWriter.created.length, 0);
 });
 
 test('applyOps create_doc_and_link (inline) links via an inline reference at the anchor', async t => {

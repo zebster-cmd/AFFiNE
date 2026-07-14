@@ -337,6 +337,7 @@ export class DocLinksWriter extends YjsDeltaWriter {
           kind: 'createDocAndLink';
           op: CreateDocAndLinkOp;
           anchorBlockId?: string;
+          noteId?: string;
         };
     const planned: Planned[] = [];
 
@@ -371,10 +372,22 @@ export class DocLinksWriter extends YjsDeltaWriter {
         case 'create_doc_and_link': {
           const mode = op.mode ?? 'embed';
           let anchorBlockId: string | undefined;
+          let noteId: string | undefined;
           if (mode === 'inline') {
             anchorBlockId = this.resolveAnchor(blocks, op.anchorBlockId);
+          } else {
+            // Validated up front - same as `planCreateLink`'s embed branch -
+            // so a source doc with no note block throws BEFORE any new doc is
+            // created below, never leaving an orphaned, registered-but-
+            // unlinked doc behind.
+            noteId = findNoteBlockId(blocks);
+            if (!noteId) {
+              throw new NotFoundException(
+                `Doc "${sourceDocId}" has no note block to hold the link`
+              );
+            }
           }
-          planned.push({ kind: 'createDocAndLink', op, anchorBlockId });
+          planned.push({ kind: 'createDocAndLink', op, anchorBlockId, noteId });
           break;
         }
 
@@ -409,12 +422,8 @@ export class DocLinksWriter extends YjsDeltaWriter {
       );
       const mode = item.op.mode ?? 'embed';
       if (mode === 'embed') {
-        const noteId = findNoteBlockId(blocks);
-        if (!noteId) {
-          throw new NotFoundException(
-            `Doc "${sourceDocId}" has no note block to hold the link`
-          );
-        }
+        // `noteId` was already resolved (and validated) up front, above.
+        const noteId = item.noteId as string;
         const blockId = nanoid();
         mutators.push(doc =>
           appendEmbedLinkBlock(doc, noteId, blockId, newDocId)
@@ -518,6 +527,12 @@ export class DocLinksWriter extends YjsDeltaWriter {
         );
       }
       if (block.get('sys:flavour') === EMBED_LINK_FLAVOUR) {
+        const actualPageId = block.get('prop:pageId');
+        if (actualPageId !== op.targetDocId) {
+          throw new NotFoundException(
+            `Block "${blockId}" links to "${actualPageId}", not the requested target "${op.targetDocId}"`
+          );
+        }
         return doc => removeBlockAndDetach(doc, blockId);
       }
       const ytext = block.get('prop:text') as Y.Text | undefined;
@@ -564,6 +579,12 @@ export class DocLinksWriter extends YjsDeltaWriter {
         );
       }
       if (block.get('sys:flavour') === EMBED_LINK_FLAVOUR) {
+        const actualPageId = block.get('prop:pageId');
+        if (op.fromTargetDocId && actualPageId !== op.fromTargetDocId) {
+          throw new NotFoundException(
+            `Block "${blockId}" links to "${actualPageId}", not the requested source "${op.fromTargetDocId}"`
+          );
+        }
         return doc => {
           const liveBlock = doc.getMap('blocks').get(blockId) as Y.Map<unknown>;
           liveBlock.set('prop:pageId', op.toTargetDocId);

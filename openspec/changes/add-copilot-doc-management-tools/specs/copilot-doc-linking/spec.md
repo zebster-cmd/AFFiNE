@@ -27,8 +27,8 @@ The system SHALL provide a `doc_links_update` tool with a `create_link` op that 
 
 #### Scenario: Create an inline @-reference link
 
-- **WHEN** `create_link` is called in inline mode with an anchor (target block id and offset)
-- **THEN** a single-space delta with `{ reference: { type: 'LinkedPage', pageId: <targetId> } }` is inserted into that block's `Y.Text`
+- **WHEN** `create_link` is called in inline mode with an anchor naming a target block id (defaulting to the doc's last paragraph when omitted)
+- **THEN** a single-space delta with `{ reference: { type: 'LinkedPage', pageId: <targetId> } }` is appended at the end of that block's `Y.Text` — there is no character-offset parameter
 
 #### Scenario: Ambiguous or missing target
 
