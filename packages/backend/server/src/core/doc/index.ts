@@ -9,6 +9,9 @@ import { StorageModule } from '../storage';
 import { PgUserspaceDocStorageAdapter } from './adapters/userspace';
 import { PgWorkspaceDocStorageAdapter } from './adapters/workspace';
 import { DatabaseWriter } from './database-writer';
+import { DocLinksWriter } from './doc-links-writer';
+import { DocPropertiesReader } from './doc-properties-reader';
+import { DocPropertiesWriter } from './doc-properties-writer';
 import { DocEventsListener } from './event';
 import { DocStorageCronJob } from './job';
 import { DocStorageOptions } from './options';
@@ -27,6 +30,9 @@ import { DocWriter } from './writer';
     DocEventsListener,
     DocWriter,
     DatabaseWriter,
+    DocPropertiesReader,
+    DocPropertiesWriter,
+    DocLinksWriter,
   ],
   exports: [
     DatabaseDocReader,
@@ -35,6 +41,9 @@ import { DocWriter } from './writer';
     DatabaseWriter,
     PgWorkspaceDocStorageAdapter,
     PgUserspaceDocStorageAdapter,
+    DocPropertiesReader,
+    DocPropertiesWriter,
+    DocLinksWriter,
   ],
 })
 export class DocStorageModule {}
@@ -53,4 +62,7 @@ export {
   readBoardFromBinary,
 } from './database-reader';
 export { DatabaseWriter } from './database-writer';
+export { DocLinksWriter } from './doc-links-writer';
+export { DocPropertiesReader } from './doc-properties-reader';
+export { DocPropertiesWriter } from './doc-properties-writer';
 export { DocStorageAdapter, type Editor } from './storage';

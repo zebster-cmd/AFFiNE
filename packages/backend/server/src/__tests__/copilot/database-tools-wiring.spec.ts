@@ -27,7 +27,11 @@ function makeRuntime() {
     {} as any, // Models
     {} as any, // PromptRuntime
     {} as any, // IndexerService
-    {} as any // DatabaseWriter
+    {} as any, // DatabaseWriter
+    {} as any, // DocPropertiesReader
+    {} as any, // DocPropertiesWriter
+    {} as any, // DocLinksReader
+    {} as any // DocLinksWriter
   );
 }
 

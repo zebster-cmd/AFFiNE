@@ -51,11 +51,11 @@
 
 ## 8. Runtime & prompt wiring
 
-- [ ] 8.1 Export the four tools from `plugins/copilot/tools/index.ts`
-- [ ] 8.2 Add `docPropertiesRead/docPropertiesUpdate/docLinksRead/docLinksUpdate` to `PromptToolsSchema` (`providers/types.ts`)
-- [ ] 8.3 Register cases in `runtime/tool-runtime.ts` (inject new services; gate the two write tools behind `env.dev || env.namespaces.canary`)
-- [ ] 8.4 Add the four tool names to the "Chat With AFFiNE AI" prompt `config.tools` in `native/.../built-in.json`; rebuild native
-- [ ] 8.5 Export new units from `core/doc/index.ts`
+- [x] 8.1 Export the four tools from `plugins/copilot/tools/index.ts`
+- [x] 8.2 Add `docPropertiesRead/docPropertiesUpdate/docLinksRead/docLinksUpdate` to `PromptToolsSchema` (`providers/types.ts`)
+- [x] 8.3 Register cases in `runtime/tool-runtime.ts` (inject new services; gate the two write tools behind `env.dev || env.namespaces.canary`)
+- [x] 8.4 Add the four tool names to the "Chat With AFFiNE AI" prompt `config.tools` in `native/.../built-in.json`; native rebuild is CI's job (not done locally, per task brief)
+- [x] 8.5 Export new units from `core/doc/index.ts` — `DocPropertiesReader`/`DocPropertiesWriter`/`DocLinksWriter` are provided+exported there; `DocLinksReader` is provided+exported from `plugins/indexer/index.ts` instead (its `IndexerService` dependency would otherwise close a static import cycle back through `core/index.ts` -> `core/auth` -> `core/doc`; see the comment left in both files)
 
 ## 9. Verify
 

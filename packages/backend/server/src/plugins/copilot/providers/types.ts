@@ -97,6 +97,11 @@ export const PromptToolsSchema = z
     'databaseRead',
     'databaseCreate',
     'databaseUpdate',
+    // work with doc attributes/links
+    'docPropertiesRead',
+    'docPropertiesUpdate',
+    'docLinksRead',
+    'docLinksUpdate',
   ])
   .array();
 
