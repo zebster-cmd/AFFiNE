@@ -26,27 +26,32 @@
 Investigative task. Deliverable: a findings note that (a) decides the Layer 2 mechanism and (b) records go/no-go per modality. Later tasks depend on its outcome.
 
 **Files:**
+
 - Create: `docs/superpowers/specs/2026-07-06-requesty-spike-findings.md`
 
 - [ ] **Step 1: Locate the `llm_adapter` variant type surface**
 
 Run:
+
 ```bash
 cd packages/backend/native
 cargo doc -p llm_adapter --no-deps 2>/dev/null; \
 find "$(cargo metadata --format-version=1 | node -e 'const m=JSON.parse(require("fs").readFileSync(0));const p=m.packages.find(x=>x.name==="llm_adapter");console.log(require("path").dirname(p.manifest_path))')" -name '*.rs' | xargs grep -ln 'ModelRegistryVariant\|default_model_registry_variants'
 ```
+
 Open the files listed. Record: is `pub struct ModelRegistryVariant` — does it derive `Deserialize`? Are its fields `pub`? Is there a public constructor? Does `default_model_registry_variants()` return an owned `Vec<ModelRegistryVariant>`? Does `resolve_model_registry_variant` / `select_model_registry_variant` accept `&[ModelRegistryVariant]`?
 
 - [ ] **Step 2: Decide the mechanism and write it down**
 
 In the findings note, record ONE of:
+
 - **A (in-repo, preferred):** `ModelRegistryVariant` is constructible (derives `Deserialize`, or public fields/ctor) AND the resolve/select functions accept an externally-built slice. → Layer 2 appends variants inside `packages/backend/native`.
 - **B (fork):** it is not externally constructible. → Layer 2 uses the `[patch.crates-io]` override in `Cargo.toml` + `.cargo/config.toml` to point `llm_adapter` at a local checkout, and adds variants there.
 
 - [ ] **Step 3: Prove the mechanism with a throwaway variant**
 
 For mechanism A, add a temporary test to `packages/backend/native/src/llm/core/model_registry.rs` that builds one variant for `requesty/spike/echo` and asserts it resolves:
+
 ```rust
 #[test]
 fn spike_can_append_variant() {
@@ -64,12 +69,14 @@ fn spike_can_append_variant() {
   assert!(hit.is_some());
 }
 ```
+
 Run: `cargo test -p affine_server_native spike_can_append_variant`
 Expected: PASS (mechanism A) or a compile error revealing the true construction API (adjust and record it). If genuinely impossible, switch to mechanism B and validate the patch builds. **Delete the throwaway test before finishing.**
 
 - [ ] **Step 4: Validate each modality against a live Requesty endpoint**
 
 Using a real key in `$REQUESTY_KEY`, confirm which endpoints Requesty actually serves OpenAI-compatibly:
+
 ```bash
 BASE=https://router.requesty.ai/v1
 # chat
@@ -85,6 +92,7 @@ curl -s $BASE/images/generations -H "Authorization: Bearer $REQUESTY_KEY" -H 'co
 curl -s $BASE/audio/transcriptions -H "Authorization: Bearer $REQUESTY_KEY" \
   -F model=mistral/voxtral-mini-latest -F file=@/path/to/sample.wav | head -c 400; echo
 ```
+
 Record per modality: **served / not served**. Rerank has no dedicated endpoint (LLM-based) — mark it served iff the chat probe with `nebius/qwen/qwen3-32b` returns a completion.
 
 - [ ] **Step 5: Commit the findings note**
@@ -99,6 +107,7 @@ git commit -m "docs: requesty spike findings (registry mechanism + endpoint vali
 ### Task 1: Requesty provider type, class, config, and registration
 
 **Files:**
+
 - Modify: `packages/backend/server/src/plugins/copilot/providers/types.ts` (add enum value)
 - Create: `packages/backend/server/src/plugins/copilot/providers/requesty.ts`
 - Modify: `packages/backend/server/src/plugins/copilot/providers/provider-tokens.ts`
@@ -108,12 +117,14 @@ git commit -m "docs: requesty spike findings (registry mechanism + endpoint vali
 - Test: `packages/backend/server/src/__tests__/copilot/requesty-provider.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `OpenAIProvider`, `OpenAIConfig` from `./openai`; `CopilotProviderType` from `./types`; `buildProviderRegistry` from `./provider-registry`.
 - Produces: `CopilotProviderType.Requesty = 'requesty'`; `class RequestyProvider extends OpenAIProvider`; config path `copilot.providers.requesty` typed `OpenAIConfig`.
 
 - [ ] **Step 1: Write the failing test**
 
 Create `packages/backend/server/src/__tests__/copilot/requesty-provider.spec.ts`:
+
 ```ts
 import test from 'ava';
 
@@ -144,9 +155,7 @@ test('RequestyProvider always uses the openai_chat backend kind', t => {
 
 test('buildProviderRegistry routes a requesty profile and strips its prefix', t => {
   const registry = buildProviderRegistry({
-    profiles: [
-      { id: 'requesty', type: CopilotProviderType.Requesty, config: { apiKey: 'k' } },
-    ],
+    profiles: [{ id: 'requesty', type: CopilotProviderType.Requesty, config: { apiKey: 'k' } }],
   });
   const routed = (require('../../plugins/copilot/providers/provider-registry') as any).resolveModel({
     registry,
@@ -166,6 +175,7 @@ Expected: FAIL — cannot find module `./requesty` / `RequestyProvider` undefine
 - [ ] **Step 3: Add the enum value**
 
 In `providers/types.ts`, add to `CopilotProviderType`:
+
 ```ts
 export enum CopilotProviderType {
   Anthropic = 'anthropic',
@@ -182,6 +192,7 @@ export enum CopilotProviderType {
 - [ ] **Step 4: Create the provider class**
 
 Create `providers/requesty.ts`:
+
 ```ts
 import type { LlmBackendConfig } from '../../../native';
 import { OpenAIProvider } from './openai';
@@ -198,9 +209,7 @@ export class RequestyProvider extends OpenAIProvider {
     return 'openai_chat' as const;
   }
 
-  protected override createNativeConfig(
-    execution?: CopilotProviderExecution
-  ): LlmBackendConfig {
+  protected override createNativeConfig(execution?: CopilotProviderExecution): LlmBackendConfig {
     const config = this.getConfig(execution);
     const baseUrl = config.baseURL || REQUESTY_DEFAULT_BASE_URL;
     return {
@@ -214,44 +223,34 @@ export class RequestyProvider extends OpenAIProvider {
 - [ ] **Step 5: Register the provider**
 
 In `providers/provider-tokens.ts`:
+
 ```ts
 import { OpenAIProvider } from './openai';
 import { RequestyProvider } from './requesty';
 
-export const CopilotProviders = [
-  OpenAIProvider,
-  CloudflareWorkersAIProvider,
-  FalProvider,
-  GeminiGenerativeProvider,
-  GeminiVertexProvider,
-  AnthropicOfficialProvider,
-  AnthropicVertexProvider,
-  RequestyProvider,
-];
+export const CopilotProviders = [OpenAIProvider, CloudflareWorkersAIProvider, FalProvider, GeminiGenerativeProvider, GeminiVertexProvider, AnthropicOfficialProvider, AnthropicVertexProvider, RequestyProvider];
 ```
+
 In `providers/provider-registry.ts`, add to `LEGACY_PROVIDER_ORDER` (append at end):
+
 ```ts
-const LEGACY_PROVIDER_ORDER: CopilotProviderType[] = [
-  CopilotProviderType.OpenAI,
-  CopilotProviderType.CloudflareWorkersAi,
-  CopilotProviderType.FAL,
-  CopilotProviderType.Gemini,
-  CopilotProviderType.GeminiVertex,
-  CopilotProviderType.Anthropic,
-  CopilotProviderType.AnthropicVertex,
-  CopilotProviderType.Requesty,
-];
+const LEGACY_PROVIDER_ORDER: CopilotProviderType[] = [CopilotProviderType.OpenAI, CopilotProviderType.CloudflareWorkersAi, CopilotProviderType.FAL, CopilotProviderType.Gemini, CopilotProviderType.GeminiVertex, CopilotProviderType.Anthropic, CopilotProviderType.AnthropicVertex, CopilotProviderType.Requesty];
 ```
+
 If `providers/index.ts` re-exports each provider, add `export * from './requesty';` (match existing export style).
 
 - [ ] **Step 6: Wire config**
 
 In `config.ts`:
+
 - Add to `CopilotProviderConfigMap`:
+
 ```ts
 [CopilotProviderType.Requesty]: OpenAIConfig;
 ```
+
 - Add a zod shape (reuse OpenAI shape) and a discriminated-union entry:
+
 ```ts
 const RequestyConfigShape = OpenAIConfigShape;
 // ...inside CopilotProviderProfileShape discriminatedUnion array:
@@ -260,11 +259,15 @@ CopilotProviderProfileBaseShape.extend({
   config: RequestyConfigShape,
 }),
 ```
+
 - Add to `AppConfigSchema.copilot.providers`:
+
 ```ts
 requesty: ConfigItem<OpenAIConfig>;
 ```
+
 - Add to `defineModuleConfig('copilot', { ... })`:
+
 ```ts
 'providers.requesty': {
   desc: 'The config for the Requesty gateway provider (OpenAI-compatible).',
@@ -305,14 +308,17 @@ git commit -m "feat(copilot): add Requesty provider type, class, config, and reg
 Applies mechanism from Task 0. Steps below show **mechanism A** (in-repo append). If Task 0 selected mechanism B, the same variant JSON becomes struct literals in the forked crate and the append happens there instead; the tests are identical.
 
 **Files:**
+
 - Modify: `packages/backend/native/src/llm/core/model_registry.rs`
 
 **Interfaces:**
+
 - Produces: `openai_chat` registry variants resolvable by canonical key `sference/glm-5.2` and `nebius/Qwen/Qwen3-Embedding-8B`.
 
 - [ ] **Step 1: Write the failing test**
 
 Add to the `#[cfg(test)] mod tests` in `model_registry.rs`:
+
 ```rust
 #[test]
 fn should_resolve_requesty_text_variant() {
@@ -340,6 +346,7 @@ Expected: FAIL — `requesty_registry_variants_for_test` / `requesty_registry_va
 - [ ] **Step 3: Add the variant builder + merge it into the default list**
 
 In `model_registry.rs`, add (construction path per Task 0 findings — `from_value` shown for mechanism A):
+
 ```rust
 fn requesty_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> {
   let defs = serde_json::json!([
@@ -378,6 +385,7 @@ fn all_registry_variants() -> Vec<llm_adapter::core::ModelRegistryVariant> {
   variants
 }
 ```
+
 Then replace the two call sites in `llm_resolve_model_registry_variant` and `llm_match_model_registry` that read `llm_adapter::core::default_model_registry_variants()` with `all_registry_variants()`.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -402,18 +410,21 @@ git commit -m "feat(native): register curated Requesty text + embedding registry
 ### Task 3: `copilot.scenarioOverrides` config + `ScenarioModelResolver` + injection
 
 **Files:**
+
 - Modify: `packages/backend/server/src/plugins/copilot/config.ts` (scenarioOverrides schema)
 - Create: `packages/backend/server/src/plugins/copilot/providers/scenario-model-resolver.ts`
 - Modify: `packages/backend/server/src/plugins/copilot/providers/factory.ts` (inject + apply in `resolveRoutes`)
 - Test: `packages/backend/server/src/__tests__/copilot/scenario-model-resolver.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `Config` from `../../../base`; `CopilotAccessContext` from `../access`; `ModelFullConditions` from `./types`.
 - Produces: `class ScenarioModelResolver { resolve(cond: ModelFullConditions, featureKind?: string): ModelFullConditions }`; config path `copilot.scenarioOverrides = { enabled: boolean; models: Partial<Record<'chat'|'image'|'embedding'|'rerank'|'transcript', string>> }`.
 
 - [ ] **Step 1: Write the failing test**
 
 Create `scenario-model-resolver.spec.ts`:
+
 ```ts
 import test from 'ava';
 
@@ -472,15 +483,16 @@ Expected: FAIL — cannot find module `scenario-model-resolver`.
 - [ ] **Step 3: Add the config schema**
 
 In `config.ts`, extend `AppConfigSchema.copilot` with:
+
 ```ts
 scenarioOverrides: ConfigItem<{
   enabled: boolean;
-  models: Partial<
-    Record<'chat' | 'image' | 'embedding' | 'rerank' | 'transcript', string>
-  >;
+  models: Partial<Record<'chat' | 'image' | 'embedding' | 'rerank' | 'transcript', string>>;
 }>;
 ```
+
 And add to `defineModuleConfig('copilot', { ... })`:
+
 ```ts
 scenarioOverrides: {
   desc: 'Override which model backs each AI scenario (routed via a provider such as Requesty).',
@@ -503,6 +515,7 @@ scenarioOverrides: {
 - [ ] **Step 4: Implement the resolver**
 
 Create `providers/scenario-model-resolver.ts`:
+
 ```ts
 import { Inject, Injectable } from '@nestjs/common';
 
@@ -540,10 +553,7 @@ export class ScenarioModelResolver {
     return scenario ? overrides.models[scenario] : undefined;
   }
 
-  resolve(
-    cond: ModelFullConditions,
-    featureKind?: string
-  ): ModelFullConditions {
+  resolve(cond: ModelFullConditions, featureKind?: string): ModelFullConditions {
     if (cond.modelId) {
       return cond;
     }
@@ -561,7 +571,9 @@ Expected: PASS (6 tests).
 - [ ] **Step 6: Inject into the factory and apply in `resolveRoutes`**
 
 In `providers/factory.ts`:
+
 - Add the import and constructor param:
+
 ```ts
 import { ScenarioModelResolver } from './scenario-model-resolver';
 // ...
@@ -572,27 +584,34 @@ constructor(
   private readonly scenarioResolver: ScenarioModelResolver
 ) {}
 ```
+
 - At the top of `resolveRoutes`, before `getEffectiveRegistry`:
+
 ```ts
 cond = this.scenarioResolver.resolve(cond, context.featureKind);
 ```
+
 (`context.featureKind` is on `CopilotAccessContext`.)
 
 - [ ] **Step 7: Register the resolver as a provider**
 
 Add `ScenarioModelResolver` to the copilot providers module `providers` array (same module that provides `CopilotProviderFactory`). Locate it:
+
 ```bash
 grep -rl "CopilotProviderFactory" packages/backend/server/src/plugins/copilot/**/*.module.ts
 ```
+
 Add `ScenarioModelResolver` to that module's `providers: [...]`.
 
 - [ ] **Step 8: Typecheck + run the copilot provider suite**
 
 Run:
+
 ```bash
 yarn workspace @affine/server exec tsc --noEmit
 yarn workspace @affine/server ava src/__tests__/copilot/scenario-model-resolver.spec.ts src/__tests__/copilot/provider-registry.spec.ts
 ```
+
 Expected: no type errors; all tests PASS.
 
 - [ ] **Step 9: Commit**
@@ -611,15 +630,18 @@ git commit -m "feat(copilot): add scenarioOverrides config and scenario model in
 ### Task 4: Config-load validation warning for scenario models
 
 **Files:**
+
 - Modify: `packages/backend/server/src/plugins/copilot/providers/scenario-model-resolver.ts`
 - Test: `packages/backend/server/src/__tests__/copilot/scenario-model-resolver.spec.ts` (extend)
 
 **Interfaces:**
+
 - Produces: `ScenarioModelResolver.warnUnknownModels(known: Set<string>): string[]` returning the list of configured scenario models absent from `known` (also logged).
 
 - [ ] **Step 1: Write the failing test**
 
 Append to `scenario-model-resolver.spec.ts`:
+
 ```ts
 test('warnUnknownModels flags scenario models missing from the registry', t => {
   const r = resolver({
@@ -639,6 +661,7 @@ Expected: FAIL — `warnUnknownModels` is not a function.
 - [ ] **Step 3: Implement the method**
 
 Add to `ScenarioModelResolver`:
+
 ```ts
 import { Logger } from '@nestjs/common';
 // ...
@@ -681,11 +704,13 @@ git commit -m "feat(copilot): warn on scenarioOverrides models missing from the 
 Only if Task 0 Step 4 marked rerank **served**. Rerank is LLM-based (chat completions), so the variant needs `text → text` capability under `openai_chat` plus the `rerank` output capability that Affine's rerank path selects on.
 
 **Files:**
+
 - Modify: `packages/backend/native/src/llm/core/model_registry.rs`
 
 - [ ] **Step 1: Write the failing test**
 
 Add to the tests module:
+
 ```rust
 #[test]
 fn should_resolve_requesty_rerank_variant() {
@@ -705,6 +730,7 @@ Expected: FAIL — variant not found.
 - [ ] **Step 3: Add the rerank variant**
 
 In `requesty_registry_variants()`, add to the JSON array:
+
 ```json
 {
   "backendKind": "openai_chat",
@@ -712,9 +738,7 @@ In `requesty_registry_variants()`, add to the JSON array:
   "rawModelId": "nebius/qwen/qwen3-32b",
   "displayName": "Requesty Qwen3 32B (reranker)",
   "aliases": ["nebius/qwen/qwen3-32b"],
-  "capabilities": [
-    { "input": ["text"], "output": ["text", "rerank"] }
-  ]
+  "capabilities": [{ "input": ["text"], "output": ["text", "rerank"] }]
 }
 ```
 
@@ -737,6 +761,7 @@ git commit -m "feat(native): register curated Requesty rerank variant"
 Only if Task 0 Step 4 marked image **served**. The variant's `protocol`/`request_layer` must match what Affine's image path emits and what Requesty accepts (finalized from Task 0 findings — `openai_images` is the OpenAI-compatible default).
 
 **Files:**
+
 - Modify: `packages/backend/native/src/llm/core/model_registry.rs`
 
 - [ ] **Step 1: Write the failing test**
@@ -760,6 +785,7 @@ Expected: FAIL.
 - [ ] **Step 3: Add the image variant**
 
 Add to the JSON array (set `protocol`/`request_layer` per Task 0 findings):
+
 ```json
 {
   "backendKind": "openai_chat",
@@ -769,9 +795,7 @@ Add to the JSON array (set `protocol`/`request_layer` per Task 0 findings):
   "aliases": ["vertex/google/gemini-3.1-flash-image-preview"],
   "protocol": "openai_images",
   "requestLayer": "openai_images",
-  "capabilities": [
-    { "input": ["text", "image"], "output": ["image"] }
-  ]
+  "capabilities": [{ "input": ["text", "image"], "output": ["image"] }]
 }
 ```
 
@@ -794,6 +818,7 @@ git commit -m "feat(native): register curated Requesty image variant"
 Only if Task 0 Step 4 marked transcript **served**. Transcription runs in the separate `plugins/copilot/transcript/` subsystem, so a registry variant is necessary but not sufficient — the transcript service's model selection must consult the `transcript` scenario override.
 
 **Files:**
+
 - Modify: `packages/backend/native/src/llm/core/model_registry.rs` (variant)
 - Modify: `packages/backend/server/src/plugins/copilot/transcript/service.ts` (model selection)
 - Test: `packages/backend/server/src/__tests__/copilot/transcript-contract.spec.ts` (extend) or a new `requesty-transcript.spec.ts`
@@ -801,6 +826,7 @@ Only if Task 0 Step 4 marked transcript **served**. Transcription runs in the se
 - [ ] **Step 1: Add the transcript variant (native)**
 
 Add to `requesty_registry_variants()`:
+
 ```json
 {
   "backendKind": "openai_chat",
@@ -808,24 +834,26 @@ Add to `requesty_registry_variants()`:
   "rawModelId": "mistral/voxtral-mini-latest",
   "displayName": "Requesty Voxtral Mini (transcription)",
   "aliases": ["mistral/voxtral-mini-latest"],
-  "capabilities": [
-    { "input": ["audio"], "output": ["text"] }
-  ]
+  "capabilities": [{ "input": ["audio"], "output": ["text"] }]
 }
 ```
+
 Add a resolve test mirroring Task 5 Step 1 (`should_resolve_requesty_transcript_variant`, asserting `input` contains `audio`). Run `cargo test should_resolve_requesty` → PASS. Rebuild native.
 
 - [ ] **Step 2: Find the transcript model-selection point**
 
 Run:
+
 ```bash
 grep -n "model" packages/backend/server/src/plugins/copilot/transcript/service.ts | head -40
 ```
+
 Identify where the transcription model id is chosen (constant, prompt, or config). Record the exact line.
 
 - [ ] **Step 3: Write the failing test**
 
 Create `packages/backend/server/src/__tests__/copilot/requesty-transcript.spec.ts` asserting that, with `scenarioOverrides.enabled` and `models.transcript = 'requesty/mistral/voxtral-mini-latest'`, the transcript service resolves that model id. Model the harness on the existing `transcript-contract.spec.ts` setup (config + service instantiation). Include the concrete assertion:
+
 ```ts
 t.is(resolvedTranscriptModelId, 'requesty/mistral/voxtral-mini-latest');
 ```
@@ -858,6 +886,7 @@ git commit -m "feat(copilot): route transcription through the transcript scenari
 ### Task 8: End-to-end verification + docs
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-07-06-requesty-provider-design.md` (mark modality outcomes) or a short operator note.
 
 - [ ] **Step 1: Full copilot suite**
@@ -890,6 +919,7 @@ git commit -m "docs: record Requesty modality outcomes after implementation"
 ## Self-Review
 
 **Spec coverage:**
+
 - Layer 1 (RequestyProvider + config) → Task 1. ✅
 - Layer 2 (curated variants, spike-gated) → Task 0 (mechanism) + Tasks 2/5/6/7 (variants). ✅
 - Layer 3 (scenarioOverrides + resolver + injection) → Task 3; config-load validation → Task 4. ✅
