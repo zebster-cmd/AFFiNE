@@ -68,11 +68,20 @@ const deny = new FakePermissionAccess(false) as unknown as PermissionAccess;
 
 const OPTIONS = { user: 'u1', workspace: 'ws1' } as any;
 
-/** In-memory `DocReader` stand-in exposing only the `getDoc` method the doc-links-update tool calls, mirroring database-tools.spec.ts's FakeDocReader. */
+/**
+ * In-memory `DocReader` stand-in exposing only the `getDoc` method the
+ * doc-links-update tool calls, mirroring database-tools.spec.ts's
+ * FakeDocReader. Tracks `getDoc` call count so tests can assert the root doc
+ * is fetched (and thus parsed via `buildPageIndexFromRoot`) exactly once per
+ * handler invocation, regardless of how many ops are in the batch.
+ */
 class FakeDocReader {
+  getDocCalls = 0;
+
   constructor(private readonly bin: Uint8Array | null) {}
 
   async getDoc(spaceId: string, docId: string) {
+    this.getDocCalls++;
     if (!this.bin) {
       return null;
     }
@@ -471,4 +480,75 @@ test('doc_links_update create_doc_and_link does not require the root doc to reso
 
   t.true(result.success);
   t.is(fakeWriter.calls[0].ops[0].op, 'create_doc_and_link');
+});
+
+test('doc_links_update parses the root doc exactly once for a multi-op batch mixing id and title targets', async t => {
+  const rootBin = rootBinWith([
+    { id: 'target-1', title: 'Target One' },
+    { id: 'target-2', title: 'Target Two' },
+  ]);
+  const docReader = new FakeDocReader(rootBin) as unknown as DocReader;
+  const fakeDocReader = docReader as unknown as FakeDocReader;
+  const fakeWriter = new FakeLinksWriter({
+    applied: 3,
+    created: [{ op: 'create_link', blockId: 'e1' }],
+  });
+  const writer = fakeWriter as unknown as DocLinksWriter;
+  const handler = buildDocLinksUpdateHandler(allow, writer, docReader);
+  const tool = createDocLinksUpdateTool(handler.bind(null, OPTIONS));
+
+  const operations: DocLinksToolOp[] = [
+    // by-id
+    { op: 'create_link', target: 'target-1' },
+    // by-title
+    { op: 'remove_link', target: 'Target Two' },
+    // mixed within a single op: fromTarget by-id, toTarget by-title
+    {
+      op: 'retarget_link',
+      fromTarget: 'target-1',
+      toTarget: 'Target Two',
+    },
+  ];
+  const result: any = await tool.execute!({ doc_id: 'doc1', operations }, {});
+
+  t.true(result.success);
+  t.is(
+    fakeDocReader.getDocCalls,
+    1,
+    'root doc should be fetched exactly once for the whole batch, not once per op'
+  );
+
+  const passedOps = fakeWriter.calls[0].ops;
+  t.is((passedOps[0] as any).targetDocId, 'target-1');
+  t.is((passedOps[1] as any).targetDocId, 'target-2');
+  t.is((passedOps[2] as any).fromTargetDocId, 'target-1');
+  t.is((passedOps[2] as any).toTargetDocId, 'target-2');
+});
+
+test('doc_links_update still lists candidates for an ambiguous title within a multi-op batch, fetching the root doc once', async t => {
+  const rootBin = rootBinWith([
+    { id: 'target-1', title: 'Target One' },
+    { id: 'dup-1', title: 'Duplicate' },
+    { id: 'dup-2', title: 'Duplicate' },
+  ]);
+  const docReader = new FakeDocReader(rootBin) as unknown as DocReader;
+  const fakeDocReader = docReader as unknown as FakeDocReader;
+  const writer = new FakeLinksWriter() as unknown as DocLinksWriter;
+  const handler = buildDocLinksUpdateHandler(allow, writer, docReader);
+  const tool = createDocLinksUpdateTool(handler.bind(null, OPTIONS));
+
+  const operations: DocLinksToolOp[] = [
+    { op: 'create_link', target: 'target-1' },
+    { op: 'remove_link', target: 'Duplicate' },
+  ];
+  const result: any = await tool.execute!({ doc_id: 'doc1', operations }, {});
+
+  t.is(result.type, 'error');
+  t.true(result.message.includes('dup-1'));
+  t.true(result.message.includes('dup-2'));
+  t.is(
+    fakeDocReader.getDocCalls,
+    1,
+    'root doc should still be fetched exactly once even though op resolution stops on the second op'
+  );
 });
