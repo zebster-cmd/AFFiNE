@@ -72,6 +72,46 @@ export function resolveDocIdsByTitle(
     .map(page => page.id as string);
 }
 
+/** An in-memory index over the root doc's `meta.pages[]`, built once. */
+export interface PageIndex {
+  /** Every known doc id, for exact-id lookups. */
+  ids: Set<string>;
+  /** Title -> matching doc ids, for title-fallback lookups. */
+  byTitle: Map<string, string[]>;
+}
+
+/**
+ * Parse the workspace root doc's `meta.pages[]` ONCE and build both an id
+ * set and a title -> ids map, so callers resolving many name-or-id
+ * references (e.g. `doc_links_update`'s batched ops) don't re-parse the
+ * root Yjs binary per reference. Equivalent to combining
+ * `readPageMetaFromRoot`'s id-existence check with `resolveDocIdsByTitle`
+ * across every reference, but with a single `Y.Doc` construction.
+ */
+export function buildPageIndexFromRoot(
+  rootBin: Buffer | Uint8Array | null | undefined
+): PageIndex {
+  const doc = loadDoc(rootBin);
+  const meta = doc.getMap('meta').toJSON() as {
+    pages?: Array<{ id?: string; title?: string }>;
+  };
+  const ids = new Set<string>();
+  const byTitle = new Map<string, string[]>();
+  for (const page of meta.pages ?? []) {
+    if (typeof page.id !== 'string') continue;
+    ids.add(page.id);
+    if (typeof page.title === 'string') {
+      const existing = byTitle.get(page.title);
+      if (existing) {
+        existing.push(page.id);
+      } else {
+        byTitle.set(page.title, [page.id]);
+      }
+    }
+  }
+  return { ids, byTitle };
+}
+
 /** Read the workspace tag definitions from `meta.properties.tags.options`. */
 export function readTagOptionsFromRoot(
   rootBin: Buffer | Uint8Array | null | undefined

@@ -7,8 +7,8 @@ import {
   type LinkOp,
 } from '../../../core/doc/doc-links-writer';
 import {
-  readPageMetaFromRoot,
-  resolveDocIdsByTitle,
+  buildPageIndexFromRoot,
+  type PageIndex,
 } from '../../../core/doc/doc-properties-reader';
 import { PermissionAccess } from '../../../core/permission';
 import { type ToolError, toolError } from './error';
@@ -81,19 +81,17 @@ export const DocLinksToolOpSchema = z.discriminatedUnion('op', [
 export type DocLinksToolOp = z.infer<typeof DocLinksToolOpSchema>;
 
 /**
- * Resolves a target reference (doc id or exact title) against the
- * workspace's docs: an exact id match (present in `meta.pages[]`) always
- * wins; otherwise every doc whose title equals `ref` is a candidate. Returns
- * the resolved id, or a `ToolError` naming zero/ambiguous matches.
+ * Resolves a target reference (doc id or exact title) against a `PageIndex`
+ * built once per handler invocation (see `buildPageIndexFromRoot`): an exact
+ * id match always wins; otherwise every doc whose title equals `ref` is a
+ * candidate. Returns the resolved id, or a `ToolError` naming zero/ambiguous
+ * matches.
  */
-function resolveTarget(
-  rootBin: Buffer | Uint8Array | null,
-  ref: string
-): string | ToolError {
-  if (readPageMetaFromRoot(rootBin, ref) !== null) {
+function resolveTarget(index: PageIndex, ref: string): string | ToolError {
+  if (index.ids.has(ref)) {
     return ref;
   }
-  const matches = resolveDocIdsByTitle(rootBin, ref);
+  const matches = index.byTitle.get(ref) ?? [];
   if (matches.length === 0) {
     return toolError(
       'Doc Links Update Failed',
@@ -152,12 +150,17 @@ export const buildDocLinksUpdateHandler = (
       );
     }
     const rootBin = rootRec?.bin ?? null;
+    // Parse the root doc's page index ONCE per invocation (not once per op)
+    // so an N-op batch does a single Y.Doc/applyUpdate pass instead of up to
+    // 2N. When no op needs resolution, `rootBin` is null and this is a
+    // trivial empty-doc parse.
+    const targetIndex: PageIndex = buildPageIndexFromRoot(rootBin);
 
     const resolvedOps: LinkOp[] = [];
     for (const op of operations) {
       switch (op.op) {
         case 'create_link': {
-          const targetDocId = resolveTarget(rootBin, op.target);
+          const targetDocId = resolveTarget(targetIndex, op.target);
           if (isTargetError(targetDocId)) return targetDocId;
           resolvedOps.push({
             op: 'create_link',
@@ -169,7 +172,7 @@ export const buildDocLinksUpdateHandler = (
         }
 
         case 'remove_link': {
-          const targetDocId = resolveTarget(rootBin, op.target);
+          const targetDocId = resolveTarget(targetIndex, op.target);
           if (isTargetError(targetDocId)) return targetDocId;
           resolvedOps.push({
             op: 'remove_link',
@@ -182,11 +185,11 @@ export const buildDocLinksUpdateHandler = (
         case 'retarget_link': {
           let fromTargetDocId: string | undefined;
           if (op.fromTarget) {
-            const resolved = resolveTarget(rootBin, op.fromTarget);
+            const resolved = resolveTarget(targetIndex, op.fromTarget);
             if (isTargetError(resolved)) return resolved;
             fromTargetDocId = resolved;
           }
-          const toTargetDocId = resolveTarget(rootBin, op.toTarget);
+          const toTargetDocId = resolveTarget(targetIndex, op.toTarget);
           if (isTargetError(toTargetDocId)) return toTargetDocId;
           resolvedOps.push({
             op: 'retarget_link',
@@ -238,7 +241,7 @@ export const createDocLinksUpdateTool = (
 ) => {
   return defineTool({
     description:
-      "Apply a batch of mutation operations to a document's links. Supported ops: create_link (embed block or inline @-mention to a target document), remove_link, retarget_link (repoints an existing link to a new document), and create_doc_and_link (spins off a brand-new document and links to it). Each op's target/from_target/to_target may be given as a document id or an exact document title; an ambiguous or unmatched title is reported as an error. Ops are applied in order within a single transaction.",
+      "Apply a batch of mutation operations to a document's links. Supported ops: create_link (embed block or inline @-mention to a target document), remove_link, retarget_link (repoints an existing link to a new document), and create_doc_and_link (spins off a brand-new document and links to it). Each op's target/fromTarget/toTarget may be given as a document id or an exact document title; an ambiguous or unmatched title is reported as an error. Ops are applied in order within a single transaction.",
     inputSchema: z.object({
       doc_id: z.string().describe('The document to update links on'),
       operations: z

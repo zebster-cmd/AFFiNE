@@ -142,6 +142,21 @@ test('doc_properties_read returns a toolError naming the doc id when the reader 
   t.true(result.message.includes('missing-doc'));
 });
 
+test('doc_properties_read surfaces a reader throw as a toolError, mirroring database-tools.spec.ts', async t => {
+  const reader = {
+    read: async () => {
+      throw new Error('storage unavailable');
+    },
+  } as unknown as DocPropertiesReader;
+  const handler = buildDocPropertiesReadHandler(allow, reader);
+  const tool = createDocPropertiesReadTool(handler.bind(null, OPTIONS));
+
+  const result: any = await tool.execute!({ doc_id: 'doc1' }, {});
+
+  t.is(result.type, 'error');
+  t.true(result.message.includes('storage unavailable'));
+});
+
 // ---------------------------------------------------------------------------
 // doc_properties_update
 // ---------------------------------------------------------------------------
@@ -276,6 +291,21 @@ test('doc_links_read returns a toolError when permission is denied', async t => 
   const result: any = await tool.execute!({ doc_id: 'doc1' }, {});
 
   t.is(result.type, 'error');
+});
+
+test('doc_links_read surfaces a reader throw as a toolError, mirroring database-tools.spec.ts', async t => {
+  const reader = {
+    read: async () => {
+      throw new Error('storage unavailable');
+    },
+  } as unknown as DocLinksReader;
+  const handler = buildDocLinksReadHandler(allow, reader);
+  const tool = createDocLinksReadTool(handler.bind(null, OPTIONS));
+
+  const result: any = await tool.execute!({ doc_id: 'doc1' }, {});
+
+  t.is(result.type, 'error');
+  t.true(result.message.includes('storage unavailable'));
 });
 
 // ---------------------------------------------------------------------------
