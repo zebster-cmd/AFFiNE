@@ -125,7 +125,7 @@ export class ToolRuntime {
       }
 
       if (
-        !(env.dev || env.namespaces.canary) &&
+        !(env.dev || env.namespaces?.canary) &&
         [
           'docCreate',
           'docUpdate',
