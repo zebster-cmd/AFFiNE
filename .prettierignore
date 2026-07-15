@@ -6,6 +6,7 @@
 .vscode
 .context
 .codex
+.superpowers
 .yarnrc.yml
 .docker
 **/.storybook
