@@ -14,6 +14,7 @@ import {
   parseNativeStructuredOutput,
 } from '../../../native';
 import { type ByokFeatureKind, ByokService } from '../byok';
+import { stripThinkTags } from '../providers/reasoning';
 import { type StreamObject } from '../providers/types';
 import { CopilotExecutionMetrics } from './execution-metrics';
 import {
@@ -56,10 +57,12 @@ function resolveAbortSignal(
     : signalOrOptions?.signal;
 }
 
-function extractTextResponse(response: LlmDispatchResponse) {
+export function extractTextResponse(response: LlmDispatchResponse) {
+  // Content only: drop separated reasoning parts, and strip any inline
+  // <think>…</think> reasoning embedded in text parts (e.g. GLM via Requesty).
   return response.message.content
-    .filter(part => part.type === 'text' || part.type === 'reasoning')
-    .map(part => part.text)
+    .filter(part => part.type === 'text')
+    .map(part => stripThinkTags(part.text).content)
     .join('')
     .trim();
 }

@@ -1,10 +1,20 @@
 import { Injectable } from '@nestjs/common';
 
 import { Config } from '../../../base';
-import { DatabaseWriter, DocReader, DocWriter } from '../../../core/doc';
+import {
+  DatabaseWriter,
+  DocLinksWriter,
+  DocPropertiesReader,
+  DocPropertiesWriter,
+  DocReader,
+  DocWriter,
+} from '../../../core/doc';
 import { PermissionAccess } from '../../../core/permission';
 import { Models } from '../../../models';
-import { IndexerService } from '../../indexer';
+// `DocLinksReader` is provided by `IndexerModule` (not `core/doc`'s
+// `DocStorageModule`) to avoid a static import cycle - see the comment in
+// `plugins/indexer/index.ts`.
+import { DocLinksReader, IndexerService } from '../../indexer';
 import type { NodeTextMiddleware } from '../config';
 import { CopilotContextService } from '../context/service';
 import {
@@ -19,6 +29,10 @@ import {
   buildDocContentGetter,
   buildDocCreateHandler,
   buildDocKeywordSearchGetter,
+  buildDocLinksReadHandler,
+  buildDocLinksUpdateHandler,
+  buildDocPropertiesReadHandler,
+  buildDocPropertiesUpdateHandler,
   buildDocSearchGetter,
   buildDocUpdateHandler,
   buildDocUpdateMetaHandler,
@@ -33,6 +47,10 @@ import {
   createDocComposeTool,
   createDocCreateTool,
   createDocKeywordSearchTool,
+  createDocLinksReadTool,
+  createDocLinksUpdateTool,
+  createDocPropertiesReadTool,
+  createDocPropertiesUpdateTool,
   createDocReadTool,
   createDocSemanticSearchTool,
   createDocUpdateMetaTool,
@@ -65,7 +83,11 @@ export class ToolRuntime {
     private readonly models: Models,
     private readonly promptRuntime: PromptRuntime,
     private readonly indexerService: IndexerService,
-    private readonly databaseWriter: DatabaseWriter
+    private readonly databaseWriter: DatabaseWriter,
+    private readonly docPropertiesReader: DocPropertiesReader,
+    private readonly docPropertiesWriter: DocPropertiesWriter,
+    private readonly docLinksReader: DocLinksReader,
+    private readonly docLinksWriter: DocLinksWriter
   ) {}
 
   async getTools(
@@ -110,6 +132,8 @@ export class ToolRuntime {
           'docUpdateMeta',
           'databaseCreate',
           'databaseUpdate',
+          'docPropertiesUpdate',
+          'docLinksUpdate',
         ].includes(tool)
       ) {
         continue;
@@ -215,6 +239,47 @@ export class ToolRuntime {
           );
           tools.database_update = createDatabaseUpdateTool(
             applyOps.bind(null, options)
+          );
+          break;
+        }
+        case 'docPropertiesRead': {
+          const getProperties = buildDocPropertiesReadHandler(
+            this.ac,
+            this.docPropertiesReader
+          );
+          tools.doc_properties_read = createDocPropertiesReadTool(
+            getProperties.bind(null, options)
+          );
+          break;
+        }
+        case 'docPropertiesUpdate': {
+          const applyPropertiesOps = buildDocPropertiesUpdateHandler(
+            this.ac,
+            this.docPropertiesWriter
+          );
+          tools.doc_properties_update = createDocPropertiesUpdateTool(
+            applyPropertiesOps.bind(null, options)
+          );
+          break;
+        }
+        case 'docLinksRead': {
+          const getLinks = buildDocLinksReadHandler(
+            this.ac,
+            this.docLinksReader
+          );
+          tools.doc_links_read = createDocLinksReadTool(
+            getLinks.bind(null, options)
+          );
+          break;
+        }
+        case 'docLinksUpdate': {
+          const applyLinksOps = buildDocLinksUpdateHandler(
+            this.ac,
+            this.docLinksWriter,
+            this.docReader
+          );
+          tools.doc_links_update = createDocLinksUpdateTool(
+            applyLinksOps.bind(null, options)
           );
           break;
         }

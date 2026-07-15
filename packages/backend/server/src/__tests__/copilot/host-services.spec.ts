@@ -370,6 +370,10 @@ test('ToolRuntime should pass route context into prompt-backed tools', async t =
     {} as any,
     promptRuntime as any,
     {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
     {} as any
   );
 
