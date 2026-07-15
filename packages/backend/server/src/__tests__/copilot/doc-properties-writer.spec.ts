@@ -84,6 +84,63 @@ class FakeEventBus {
   }
 }
 
+/**
+ * Fake `DocWriter`: `set_title` delegates the title change to
+ * `DocWriter.updateDocMeta`, which (production) writes BOTH the doc's own
+ * `affine:page` `prop:title` (native `updateDocTitle`) and the root
+ * `meta.pages[].title` copy (native `updateRootDocMetaTitle`). This fake
+ * records every call for spy assertions, and simulates just the root-meta
+ * side against the SAME `FakeMultiDocStorage` (mirroring
+ * `updateRootDocMetaTitle`) so round-trip assertions can observe it here too
+ * - without depending on the native y-octo addon for the doc-body write,
+ * which is instead proved end-to-end by `_verify.mts`.
+ */
+class FakeDocWriter {
+  calls: {
+    workspaceId: string;
+    docId: string;
+    title: string | undefined;
+    editorId: string | undefined;
+  }[] = [];
+
+  constructor(private readonly storage: FakeMultiDocStorage) {}
+
+  async updateDocMeta(
+    workspaceId: string,
+    docId: string,
+    meta: { title?: string },
+    editorId?: string
+  ) {
+    this.calls.push({ workspaceId, docId, title: meta.title, editorId });
+
+    const rootRec = await this.storage.getDoc(workspaceId, workspaceId);
+    if (!rootRec) {
+      throw new Error(
+        `Workspace ${workspaceId} not found or has no root document`
+      );
+    }
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, rootRec.bin);
+    const before = Y.encodeStateVector(doc);
+    doc.transact(() => {
+      const metaMap = doc.getMap('meta');
+      const pages = metaMap.get('pages') as Y.Array<Y.Map<unknown>>;
+      const page = pages.toArray().find(p => p.get('id') === docId);
+      if (page) {
+        page.set('title', meta.title);
+      }
+    });
+    const delta = Y.encodeStateAsUpdate(doc, before);
+    await this.storage.pushDocUpdates(
+      workspaceId,
+      workspaceId,
+      [delta],
+      editorId
+    );
+    return { success: true };
+  }
+}
+
 function makeWriter(seed: {
   root?: Uint8Array;
   props?: Uint8Array;
@@ -96,10 +153,16 @@ function makeWriter(seed: {
   if (seed.info) storage.set(docCustomPropertyInfoDocId(WS), seed.info);
   if (seed.favorite) storage.set(favoriteDocId(USER, WS), seed.favorite);
   const event = new FakeEventBus();
-  // Cast: the fakes only implement the two methods DocPropertiesWriter's base
-  // class (YjsDeltaWriter) actually calls, not the full adapter/EventBus surface.
-  const writer = new DocPropertiesWriter(storage as any, event as any);
-  return { writer, storage, event };
+  const docWriter = new FakeDocWriter(storage);
+  // Cast: the fakes only implement the methods DocPropertiesWriter's base
+  // class (YjsDeltaWriter) and DocWriter delegation actually call, not the
+  // full adapter/EventBus/DocWriter surface.
+  const writer = new DocPropertiesWriter(
+    storage as any,
+    event as any,
+    docWriter as any
+  );
+  return { writer, storage, event, docWriter };
 }
 
 // 3.1 - value codec
@@ -136,7 +199,7 @@ test('applyOps set_title/set_trash update the root doc page entry', async t => {
   const root = buildRootDoc({
     pages: [{ id: DOC, title: 'Old', trash: false }],
   });
-  const { writer, storage } = makeWriter({ root });
+  const { writer, storage, docWriter } = makeWriter({ root });
 
   const result = await writer.applyOps(WS, DOC, USER, [
     { op: 'set_title', title: 'New Title' },
@@ -144,6 +207,11 @@ test('applyOps set_title/set_trash update the root doc page entry', async t => {
   ]);
 
   t.is(result.applied, 2);
+  // set_title delegates to DocWriter.updateDocMeta (which writes the doc's
+  // own body title too - see writer.ts/_verify.mts), not a root-only mutator.
+  t.deepEqual(docWriter.calls, [
+    { workspaceId: WS, docId: DOC, title: 'New Title', editorId: undefined },
+  ]);
   const merged = await storage.getDoc(WS, WS);
   const page = readPageMetaFromRoot(merged!.bin, DOC);
   t.is(page?.title, 'New Title');
@@ -188,11 +256,12 @@ test('applyOps set_journal rejects a malformed date and pushes nothing', async t
 
 test('applyOps set_title on a doc missing from meta.pages throws and pushes nothing', async t => {
   const root = buildRootDoc({ pages: [{ id: 'other-doc' }] });
-  const { writer, storage } = makeWriter({ root });
+  const { writer, storage, docWriter } = makeWriter({ root });
   await t.throwsAsync(
     writer.applyOps(WS, DOC, USER, [{ op: 'set_title', title: 'x' }])
   );
   t.is(storage.pushed.length, 0);
+  t.is(docWriter.calls.length, 0);
 });
 
 // 4.1 - tags
@@ -478,7 +547,7 @@ test('applyOps aborts the whole batch when a later op is invalid (no partial wri
     pages: [{ id: DOC, title: 'Old' }],
     tagOptions: [],
   });
-  const { writer, storage } = makeWriter({ root });
+  const { writer, storage, docWriter } = makeWriter({ root });
 
   await t.throwsAsync(
     writer.applyOps(WS, DOC, USER, [
@@ -488,6 +557,7 @@ test('applyOps aborts the whole batch when a later op is invalid (no partial wri
   );
 
   t.is(storage.pushed.length, 0);
+  t.is(docWriter.calls.length, 0); // DocWriter.updateDocMeta must NOT have been called
   const merged = await storage.getDoc(WS, WS);
   const page = readPageMetaFromRoot(merged!.bin, DOC);
   t.is(page?.title, 'Old'); // set_title must NOT have been applied
@@ -502,7 +572,7 @@ test('applyOps round-trips every attribute across all four docs in one batch', a
   const info = buildCustomPropertyInfoDoc([
     { id: 'p1', name: 'Priority', type: 'number' },
   ]);
-  const { writer, storage } = makeWriter({ root, info });
+  const { writer, storage, docWriter } = makeWriter({ root, info });
 
   const result = await writer.applyOps(WS, DOC, USER, [
     { op: 'set_title', title: 'New Title' },
@@ -516,6 +586,12 @@ test('applyOps round-trips every attribute across all four docs in one batch', a
   ]);
 
   t.is(result.applied, 8);
+
+  // set_title delegates to DocWriter.updateDocMeta - see writer.ts/_verify.mts
+  // for proof it also updates the doc's own affine:page prop:title.
+  t.deepEqual(docWriter.calls, [
+    { workspaceId: WS, docId: DOC, title: 'New Title', editorId: undefined },
+  ]);
 
   const rootRec = await storage.getDoc(WS, WS);
   const page = readPageMetaFromRoot(rootRec!.bin, DOC);
@@ -546,7 +622,8 @@ test('a DocPropertiesWriter set_title edit and a concurrent client trash edit me
   storageA.set(WS, baseBin);
   const writer = new DocPropertiesWriter(
     storageA as any,
-    new FakeEventBus() as any
+    new FakeEventBus() as any,
+    new FakeDocWriter(storageA) as any
   );
   await writer.applyOps(WS, DOC, USER, [
     { op: 'set_title', title: 'Edited by writer' },

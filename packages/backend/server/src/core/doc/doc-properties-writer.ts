@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 import { z } from 'zod';
 
+import { EventBus } from '../../base';
+import { PgWorkspaceDocStorageAdapter } from './adapters/workspace';
 import {
   type PropertyDef,
   readPageMetaFromRoot,
@@ -20,6 +22,7 @@ import {
   ORM_DELETE_FLAG,
   type TagOption,
 } from './doc-properties-types';
+import { DocWriter } from './writer';
 import { YjsDeltaWriter } from './yjs-delta';
 
 /** Set `set_title`/`set_trash`. */
@@ -372,9 +375,24 @@ const JOURNAL_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
  * is known-valid does it group the resulting mutations by target doc and push
  * one delta per affected doc - giving the "no partial write on an invalid op"
  * guarantee the spec requires without needing real multi-doc transactions.
+ *
+ * `set_title` is the one op that does NOT push its own root mutation here:
+ * it delegates to {@link DocWriter.updateDocMeta}, which writes BOTH the
+ * doc's own `affine:page` `prop:title` (native `updateDocTitle`) and the
+ * root `meta.pages[].title` copy (native `updateRootDocMetaTitle`) - reusing
+ * the canonical title-write path so the editor/body title never diverges
+ * from the denormalized root copy.
  */
 @Injectable()
 export class DocPropertiesWriter extends YjsDeltaWriter {
+  constructor(
+    storage: PgWorkspaceDocStorageAdapter,
+    event: EventBus,
+    private readonly docWriter: DocWriter
+  ) {
+    super(storage, event);
+  }
+
   async applyOps(
     workspaceId: string,
     docId: string,
@@ -436,6 +454,11 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
 
     const createdTagIds: string[] = [];
     const createdPropertyIds: string[] = [];
+    // Set by `set_title` (last one in the batch wins, same as the other ops'
+    // root mutators); applied via `DocWriter.updateDocMeta` AFTER the loop,
+    // once the whole batch is known-valid. `undefined` means no `set_title`
+    // op was in this batch.
+    let pendingTitle: string | undefined;
     const rootMutators: Array<(doc: Y.Doc) => void> = [];
     const propsMutators: Array<(doc: Y.Doc) => void> = [];
     const infoMutators: Array<(doc: Y.Doc) => void> = [];
@@ -444,13 +467,11 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
     for (const op of ops) {
       switch (op.op) {
         case 'set_title': {
-          const title = op.title;
-          rootMutators.push(doc => {
-            // Existence already guaranteed by the up-front `pageMeta` check
-            // (`needsPageCheck`) above, before any mutator runs.
-            const page = findPageEntry(doc, docId) as Y.Map<unknown>;
-            page.set('title', title);
-          });
+          // Existence already guaranteed by the up-front `pageMeta` check
+          // (`needsPageCheck`) above. Deferred to `DocWriter.updateDocMeta`
+          // after the loop (see the class doc comment) instead of a root
+          // mutator here, so the doc's own body title is written too.
+          pendingTitle = op.title;
           break;
         }
 
@@ -683,6 +704,17 @@ export class DocPropertiesWriter extends YjsDeltaWriter {
     }
 
     // Everything validated - now, and only now, push one delta per affected doc.
+    if (pendingTitle !== undefined) {
+      // Reuses the canonical title-write path (see the class doc comment):
+      // writes the doc's own `affine:page` `prop:title` AND the root
+      // `meta.pages[].title` copy, instead of a root-only mutator.
+      await this.docWriter.updateDocMeta(
+        workspaceId,
+        docId,
+        { title: pendingTitle },
+        editorId
+      );
+    }
     if (rootMutators.length) {
       await this.applyAndPush(
         workspaceId,
