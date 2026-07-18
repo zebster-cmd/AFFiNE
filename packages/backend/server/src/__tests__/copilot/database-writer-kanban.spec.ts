@@ -212,9 +212,12 @@ test('applyOps move_card sets the card group cell and places it in the target gr
   t.truthy(doneGroup);
   t.true(doneGroup?.cardRowIds.includes('r1'));
 
-  // r1 must no longer be listed under Todo.
+  // r1 must no longer be listed under Todo. Once its last card leaves, the
+  // Todo bucket has no rows, so the reader (groups are built from occupied row
+  // buckets) omits the group entirely and todoGroup is undefined. Either way,
+  // r1 must not appear under Todo.
   const todoGroup = view?.groups?.find(g => g.value === 'Todo');
-  t.false(todoGroup?.cardRowIds.includes('r1'));
+  t.falsy(todoGroup?.cardRowIds.includes('r1'));
 
   t.true(delta.length < merged.length);
 });
