@@ -1121,6 +1121,11 @@ jobs:
 
       - name: Decide test scope
         id: decision
+        env:
+          # Copilot E2E boots a real dev server that needs a provider key from
+          # TEST_SERVER_CONFIG. On a fork without that secret the AI panel never
+          # renders and every test times out, so skip E2E when it is absent.
+          HAS_SERVER_CONFIG: ${{ secrets.TEST_SERVER_CONFIG != '' }}
         run: |
           if [[ "${{ steps.copilot-filter.outputs.api }}" == "true" ]]; then
             echo "run_api=true" >> "$GITHUB_OUTPUT"
@@ -1128,7 +1133,7 @@ jobs:
             echo "run_api=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if [[ "${{ steps.copilot-filter.outputs.e2e }}" == "true" ]]; then
+          if [[ "${{ steps.copilot-filter.outputs.e2e }}" == "true" && "$HAS_SERVER_CONFIG" == "true" ]]; then
             echo "run_e2e=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_e2e=false" >> "$GITHUB_OUTPUT"
