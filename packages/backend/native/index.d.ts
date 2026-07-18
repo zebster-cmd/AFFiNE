@@ -27,6 +27,18 @@ export declare class BackendRuntime {
   cleanupExpiredRuntimeGates(limit: number): Promise<number>
   cleanupExpiredUserSessions(limit: number): Promise<number>
   cleanupExpiredSnapshotHistories(limit: number): Promise<number>
+  isInviteAbuseUserQuarantinedOrBanned(userId: string): Promise<boolean>
+  isInviteAbuseWorkspaceQuarantined(workspaceId: string): Promise<boolean>
+  claimInviteAbuseAction(actionId: string, workerId: string): Promise<boolean>
+  claimRetryableInviteAbuseActions(workerId: string, limit: number): Promise<Array<RuntimeInviteAbuseClaimedAction>>
+  markInviteAbuseAction(actionId: string, workerId: string, status: string, error?: string | undefined | null): Promise<boolean>
+  assertWorkspaceInviteQuotaV1(input: RuntimeWorkspaceInviteQuotaInput): Promise<RuntimeWorkspaceInviteQuotaDecision>
+  commitWorkspaceInviteQuotaV1(reservationId: string, usage: RuntimeWorkspaceInviteQuotaUsage): Promise<boolean>
+  releaseWorkspaceInviteQuotaV1(reservationId: string): Promise<boolean>
+  assertMailDeliveryQuotaV1(input: RuntimeMailDeliveryQuotaInput): Promise<RuntimeMailDeliveryQuotaDecision>
+  commitMailDeliveryQuotaV1(reservationId: string): Promise<boolean>
+  releaseMailDeliveryQuotaV1(reservationId: string): Promise<boolean>
+  cleanupExpiredRollingQuota(limit: number): Promise<number>
   createAuthChallenge(purpose: string, token: string, payload: any, ttlMs: number): Promise<boolean>
   getAuthChallenge(purpose: string, token: string): Promise<any | null>
   consumeAuthChallenge(purpose: string, token: string): Promise<any | null>
@@ -159,6 +171,20 @@ export interface AssertSafeUrlRequest {
   url: string
 }
 
+export declare function authSessionAccessTokenKeyId(token: string): string | null
+
+export interface AuthSessionAccessTokenVerification {
+  status: string
+  userId?: string
+  authSessionId?: string
+}
+
+export interface AuthSessionRefreshToken {
+  token: string
+  id: string
+  secretHash: string
+}
+
 export interface BackendRuntimeHealth {
   started: boolean
   databaseConnected: boolean
@@ -254,11 +280,40 @@ export interface CommandResponse {
   error?: LicenseError
 }
 
+export interface ContentPolicyMatch {
+  type: string
+  reason: string
+  value?: string
+  span?: ContentPolicyMatchSpan
+}
+
+export interface ContentPolicyMatchSpan {
+  start: number
+  end: number
+}
+
+export interface ContentPolicyScanInput {
+  value: string
+  checks?: Array<string>
+}
+
+export interface ContentPolicyScanResult {
+  version: number
+  original: string
+  normalized: string
+  skeleton: string
+  matched: boolean
+  matches: Array<ContentPolicyMatch>
+  flags: Array<string>
+}
+
 export interface CoordinationLeaseGrant {
   key: string
   owner: string
   fencingToken: bigint | number
 }
+
+export declare function createAuthSessionRefreshToken(): AuthSessionRefreshToken
 
 /**
  * Converts markdown content to AFFiNE-compatible y-octo document binary.
@@ -535,7 +590,7 @@ export interface ModelConditionsContract {
 }
 
 export interface ModelRegistryMatchRequest {
-  backendKind: 'openai_chat' | 'openai_responses' | 'anthropic' | 'cloudflare_workers_ai' | 'gemini_api' | 'gemini_vertex' | 'fal' | 'anthropic_vertex'
+  backendKind: 'openai_chat' | 'openai_responses' | 'anthropic' | 'cloudflare_workers_ai' | 'gemini_api' | 'gemini_vertex' | 'fal' | 'anthropic_vertex' | 'deepseek' | 'kimi' | 'opencode_go' | 'opencode_zen'
   cond: ModelConditionsContract
 }
 
@@ -544,7 +599,7 @@ export interface ModelRegistryMatchResponse {
 }
 
 export interface ModelRegistryResolveRequest {
-  backendKind?: 'openai_chat' | 'openai_responses' | 'anthropic' | 'cloudflare_workers_ai' | 'gemini_api' | 'gemini_vertex' | 'fal' | 'anthropic_vertex'
+  backendKind?: 'openai_chat' | 'openai_responses' | 'anthropic' | 'cloudflare_workers_ai' | 'gemini_api' | 'gemini_vertex' | 'fal' | 'anthropic_vertex' | 'deepseek' | 'kimi' | 'opencode_go' | 'opencode_zen'
   modelId: string
 }
 
@@ -555,11 +610,11 @@ export interface ModelRegistryResolveResponse {
 
 export interface ModelRegistryRouteContract {
   protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'anthropic' | 'gemini' | 'fal_image'
-  requestLayer?: 'anthropic' | 'chat_completions' | 'cloudflare_workers_ai' | 'responses' | 'openai_images' | 'fal' | 'vertex' | 'vertex_anthropic' | 'gemini_api' | 'gemini_vertex'
+  requestLayer?: 'anthropic' | 'chat_completions' | 'chat_completions_no_v1' | 'cloudflare_workers_ai' | 'responses' | 'openai_images' | 'fal' | 'vertex' | 'vertex_anthropic' | 'gemini_api' | 'gemini_vertex'
 }
 
 export interface ModelRegistryVariantContract {
-  backendKind: 'openai_chat' | 'openai_responses' | 'anthropic' | 'cloudflare_workers_ai' | 'gemini_api' | 'gemini_vertex' | 'fal' | 'anthropic_vertex'
+  backendKind: 'openai_chat' | 'openai_responses' | 'anthropic' | 'cloudflare_workers_ai' | 'gemini_api' | 'gemini_vertex' | 'fal' | 'anthropic_vertex' | 'deepseek' | 'kimi' | 'opencode_go' | 'opencode_zen'
   canonicalKey: string
   rawModelId: string
   displayName?: string
@@ -567,7 +622,7 @@ export interface ModelRegistryVariantContract {
   legacyAliases?: Array<string>
   capabilities: Array<CapabilityModelCapability>
   protocol?: 'openai_chat' | 'openai_responses' | 'openai_images' | 'anthropic' | 'gemini' | 'fal_image'
-  requestLayer?: 'anthropic' | 'chat_completions' | 'cloudflare_workers_ai' | 'responses' | 'openai_images' | 'fal' | 'vertex' | 'vertex_anthropic' | 'gemini_api' | 'gemini_vertex'
+  requestLayer?: 'anthropic' | 'chat_completions' | 'chat_completions_no_v1' | 'cloudflare_workers_ai' | 'responses' | 'openai_images' | 'fal' | 'vertex' | 'vertex_anthropic' | 'gemini_api' | 'gemini_vertex'
   routeOverrides?: Record<string, ModelRegistryRouteContract>
   behaviorFlags?: Array<string>
 }
@@ -605,6 +660,13 @@ export interface NativePageDocContent {
 export interface NativeWorkspaceDocContent {
   name: string
   avatarKey: string
+}
+
+export declare function parseAuthSessionRefreshToken(token: string): ParsedAuthSessionRefreshToken | null
+
+export interface ParsedAuthSessionRefreshToken {
+  id: string
+  secretHash: string
 }
 
 export interface ParsedDoc {
@@ -914,10 +976,60 @@ export interface RuntimeDocHistoryInput {
   historyMaxAgeMs: number
 }
 
+export interface RuntimeInviteAbuseActionRequired {
+  action: string
+  subjectKey: string
+  evidenceId: string
+  actionId: string
+}
+
+export interface RuntimeInviteAbuseClaimedAction {
+  action: string
+  subjectKey: string
+  evidenceId: string
+  actionId: string
+  actorUserId: string
+  workspaceId: string
+}
+
 export interface RuntimeMagicLinkOtpConsumeResult {
   ok: boolean
   token?: string
   reason?: string
+}
+
+export interface RuntimeMailDeliveryQuotaDecision {
+  allowed: boolean
+  reservationId?: string
+  mailClass: string
+  retryAfterSeconds?: number
+  reason?: string
+  scopeKey?: string
+  windowSeconds?: number
+  limit?: number
+  current?: number
+  requested?: number
+}
+
+export interface RuntimeMailDeliveryQuotaInput {
+  requestId?: string
+  mailName: string
+  recipient: RuntimeMailDeliveryQuotaRecipientInput
+  metadata: RuntimeMailDeliveryQuotaMetadataInput
+  source?: RuntimeQuotaSourceInput
+}
+
+export interface RuntimeMailDeliveryQuotaMetadataInput {
+  actorUserId?: string
+  workspaceId?: string
+  notificationId?: string
+  abuseSubjectKey?: string
+}
+
+export interface RuntimeMailDeliveryQuotaRecipientInput {
+  email: string
+  domain: string
+  userId?: string
 }
 
 export interface RuntimeMultipartUploadInit {
@@ -960,6 +1072,19 @@ export interface RuntimePresignedObjectRequest {
   expiresAtMs: number
 }
 
+export interface RuntimeQuotaSourceInput {
+  trusted: boolean
+  ip?: string
+  country?: string
+  asn?: number
+  rayId?: string
+}
+
+export interface RuntimeQuotaTargetDomainInput {
+  domain: string
+  count: number
+}
+
 export interface RuntimeVerificationTokenRecord {
   tokenType: number
   token: string
@@ -972,6 +1097,33 @@ export interface RuntimeWorkspaceInviteLinkRecord {
   inviteId: string
   inviterUserId: string
   expiresAtMs: number
+}
+
+export interface RuntimeWorkspaceInviteQuotaDecision {
+  allowed: boolean
+  reservationId?: string
+  retryAfterSeconds?: number
+  reason?: string
+  scopeKey?: string
+  windowSeconds?: number
+  limit?: number
+  current?: number
+  requested?: number
+  actionRequired?: RuntimeInviteAbuseActionRequired
+}
+
+export interface RuntimeWorkspaceInviteQuotaInput {
+  actorUserId: string
+  workspaceId: string
+  requestId?: string
+  targetCount: number
+  targetDomains: Array<RuntimeQuotaTargetDomainInput>
+  source?: RuntimeQuotaSourceInput
+}
+
+export interface RuntimeWorkspaceInviteQuotaUsage {
+  targetCount: number
+  targetDomains: Array<RuntimeQuotaTargetDomainInput>
 }
 
 export interface RuntimeWorkspaceStatsDailyRecalibrationResult {
@@ -1029,6 +1181,10 @@ export interface SafeFetchResponse {
   headers: Record<string, string>
   body: Buffer
 }
+
+export declare function scanContentPolicyV1(input: ContentPolicyScanInput): ContentPolicyScanResult
+
+export declare function signAuthSessionAccessToken(userId: string, authSessionId: string, keyId: string, secret: Buffer, issuedAt: number, expiresAt: number): string
 
 export interface StorageProviderCapabilities {
   put: boolean
@@ -1123,5 +1279,7 @@ export declare function updateRootDocMetaTitle(rootDocBin: Buffer, docId: string
  * document state.
  */
 export declare function validateDocUpdate(update: Buffer): Promise<boolean>
+
+export declare function verifyAuthSessionAccessToken(token: string, expectedKeyId: string, secret: Buffer, now: number): AuthSessionAccessTokenVerification
 
 export declare function verifyChallengeResponse(response: string, bits: number, resource: string): Promise<boolean>

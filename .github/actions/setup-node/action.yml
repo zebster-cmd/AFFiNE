@@ -176,7 +176,20 @@ runs:
     - name: Install Playwright's dependencies
       shell: bash
       if: inputs.playwright-install == 'true'
-      run: yarn playwright install --with-deps $(echo "${{ inputs.playwright-platform }}" | tr ',' ' ')
+      run: |
+        # Retry to self-heal transient apt/network flakes (e.g. ports.ubuntu.com
+        # unreachable) during the Playwright system-deps install, which otherwise
+        # fail whole E2E shards in the Setup step before any test runs.
+        platforms=$(echo "${{ inputs.playwright-platform }}" | tr ',' ' ')
+        for attempt in 1 2 3; do
+          if yarn playwright install --with-deps $platforms; then
+            exit 0
+          fi
+          echo "Playwright deps install failed (attempt $attempt/3); retrying in 15s..."
+          sleep 15
+        done
+        echo "Playwright deps install failed after 3 attempts" >&2
+        exit 1
       working-directory: ${{ steps.workspace-path.outputs.workspace_path }}
       env:
         PLAYWRIGHT_BROWSERS_PATH: ${{ steps.workspace-path.outputs.workspace_path }}/node_modules/.cache/ms-playwright
