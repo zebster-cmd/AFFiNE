@@ -8,6 +8,11 @@ import { property, query, state } from 'lit/decorators.js';
 import { choose } from 'lit/directives/choose.js';
 import { styleMap } from 'lit/directives/style-map.js';
 
+import {
+  ARTIFACT_MAX_HEIGHT,
+  decideLink,
+  resolveGuestMessage,
+} from './host-bootstrap';
 import { linkIframe } from './iframe-container';
 
 export const CodeBlockHtmlPreview = CodeBlockPreviewExtension(
@@ -19,7 +24,8 @@ export class HTMLPreview extends SignalWatcher(
   WithDisposable(ShadowlessElement)
 ) {
   static override styles = css`
-    .html-preview-loading {
+    .html-preview-loading,
+    .html-preview-fallback {
       color: ${unsafeCSSVarV2('text/placeholder')};
       font-feature-settings:
         'liga' off,
@@ -33,8 +39,7 @@ export class HTMLPreview extends SignalWatcher(
       line-height: normal;
     }
 
-    .html-preview-error,
-    .html-preview-fallback {
+    .html-preview-error {
       color: ${unsafeCSSVarV2('button/error')};
       font-feature-settings:
         'liga' off,
@@ -61,11 +66,38 @@ export class HTMLPreview extends SignalWatcher(
   @property({ attribute: false })
   accessor html: string | null = null;
 
+  /**
+   * Size the frame to the artifact's reported content height.
+   *
+   * Enabled for previews that sit inline in document flow. Consumers that
+   * already stretch the frame to a container — such as the chat artifact
+   * preview panel — must pass `false`, otherwise the inline height written here
+   * would override their stylesheet rule.
+   */
+  @property({ attribute: false })
+  accessor autoResize: boolean = true;
+
   @state()
   accessor state: 'loading' | 'error' | 'finish' | 'fallback' = 'loading';
 
+  @state()
+  private accessor _contentHeight: number | null = null;
+
   @query('iframe')
   accessor iframe!: HTMLIFrameElement;
+
+  /** HTML currently rendered in the frame, to suppress redundant reloads. */
+  private _renderedHtml: string | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+
+    const onMessage = (event: MessageEvent) => this._onGuestMessage(event);
+    window.addEventListener('message', onMessage);
+    this.disposables.add(() =>
+      window.removeEventListener('message', onMessage)
+    );
+  }
 
   override firstUpdated(_changedProperties: PropertyValues): void {
     const result = super.firstUpdated(_changedProperties);
@@ -95,19 +127,61 @@ export class HTMLPreview extends SignalWatcher(
     return this.model?.props.text.toString() ?? this.html;
   }
 
-  private _link() {
-    this.state = 'loading';
+  private _onGuestMessage(event: MessageEvent) {
+    const action = resolveGuestMessage(event, this.iframe ?? null, {
+      autoResize: this.autoResize,
+    });
 
-    if (!this.normalizedHtml) {
+    switch (action.kind) {
+      case 'resize':
+        this._contentHeight = action.height;
+        break;
+
+      case 'ready':
+        this.state = 'finish';
+        break;
+
+      case 'error':
+        // A script error rarely means nothing rendered, so keep showing the
+        // artifact rather than replacing it with an error panel.
+        console.warn('HTML artifact reported an error:', action.message);
+        break;
+
+      case 'ignore':
+        break;
+    }
+  }
+
+  private _link() {
+    const html = this.normalizedHtml;
+    const decision = decideLink(
+      html,
+      this._renderedHtml,
+      this.state === 'finish'
+    );
+
+    // `decision === 'empty'` exactly when `html` is empty; the explicit check
+    // also narrows the type for `linkIframe` below.
+    if (decision === 'empty' || !html) {
+      this._renderedHtml = null;
       this.state = 'fallback';
       return;
     }
 
+    if (decision === 'skip') return;
+
+    this.state = 'loading';
+    this._contentHeight = null;
+
     try {
-      linkIframe(this.iframe, this.normalizedHtml);
+      linkIframe(this.iframe, html);
+      this._renderedHtml = html;
+      // Reveal immediately rather than waiting for the guest handshake: if the
+      // bootstrap never runs, the artifact must still be visible.
       this.state = 'finish';
     } catch (error) {
       console.error('HTML preview iframe failed:', error);
+      this._renderedHtml = null;
       this.state = 'error';
     }
   }
@@ -135,8 +209,7 @@ export class HTMLPreview extends SignalWatcher(
             'fallback',
             () =>
               html`<div class="html-preview-fallback">
-                This feature is not supported in your browser. Please download
-                the AFFiNE Desktop App to use it.
+                Nothing to preview yet.
               </div>`,
           ],
         ])}
@@ -145,6 +218,14 @@ export class HTMLPreview extends SignalWatcher(
           title="HTML Preview"
           style=${styleMap({
             display: this.state === 'finish' ? undefined : 'none',
+            // Only write a height once the guest has measured itself. Until
+            // then the stylesheet default applies, so a preview whose bootstrap
+            // never runs still renders at a usable size.
+            height:
+              this.autoResize && this._contentHeight !== null
+                ? `${this._contentHeight}px`
+                : undefined,
+            maxHeight: this.autoResize ? `${ARTIFACT_MAX_HEIGHT}px` : undefined,
           })}
         ></iframe>
       </div>
