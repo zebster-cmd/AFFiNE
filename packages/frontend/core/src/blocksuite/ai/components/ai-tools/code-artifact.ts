@@ -22,6 +22,7 @@ import { effect, signal } from '@preact/signals-core';
 import { css, html, LitElement, nothing } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
+import { keyed } from 'lit/directives/keyed.js';
 import { bundledLanguagesInfo, type ThemedToken } from 'shiki';
 
 import { preprocessHtml } from '../../utils/html';
@@ -389,6 +390,11 @@ export class CodeArtifactTool extends ArtifactTool<
       height: 100%;
     }
 
+    /* The inactive view stays mounted so its state survives the toggle. */
+    .code-artifact-preview > [hidden] {
+      display: none;
+    }
+
     .code-artifact-control-btn {
       background: transparent;
       border-radius: 8px;
@@ -484,16 +490,28 @@ export class CodeArtifactTool extends ArtifactTool<
     if (typeof result !== 'object' || !('html' in result)) return html``;
 
     const { html: htmlContent } = result as { html: string };
+    const toolCallId = this.data.toolCallId;
 
+    // Both views stay mounted and are toggled with `hidden`. Removing the
+    // preview would tear down its iframe and discard the artifact's live state
+    // every time the user peeked at the code. Keying by tool call id keeps the
+    // same elements across chat message re-renders.
     return html`<div class="code-artifact-preview">
-      ${this.mode === 'preview'
-        ? html`<affine-html-preview .html=${htmlContent}></affine-html-preview>`
-        : html`<code-highlighter
+      ${keyed(
+        toolCallId,
+        html`<affine-html-preview
+            .html=${htmlContent}
+            .autoResize=${false}
+            ?hidden=${this.mode !== 'preview'}
+          ></affine-html-preview>
+          <code-highlighter
             .std=${this.std}
             .code=${htmlContent}
             .language=${'html'}
             .showLineNumbers=${true}
-          ></code-highlighter>`}
+            ?hidden=${this.mode !== 'code'}
+          ></code-highlighter>`
+      )}
     </div>`;
   }
 
